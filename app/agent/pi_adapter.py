@@ -52,14 +52,15 @@ def upsert_custom_provider(cfg: dict) -> bool:
     """
     if not (cfg.get("baseUrl") or cfg.get("model")):
         return False
+    model_id = cfg.get("model") or CUSTOM_MODEL_ID
     entry = {
         "name": "Voice Shell Provider",
         "baseUrl": cfg.get("baseUrl") or DEFAULT_OPENAI_BASE_URL,
         "api": "openai-completions",
         "models": [
             {
-                "id": CUSTOM_MODEL_ID,
-                "name": cfg.get("model") or "Voice Shell Model",
+                "id": model_id,
+                "name": model_id,
                 "reasoning": False,
                 "input": ["text"],
                 "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
@@ -181,7 +182,9 @@ class PiAdapter(AgentClient):
         env = os.environ.copy()
         cfg = _load_runtime_settings()
         if upsert_custom_provider(cfg):
-            cmd.extend(["--provider", PROVIDER_ID, "--model", CUSTOM_MODEL_ID])
+            cmd.extend(
+                ["--provider", PROVIDER_ID, "--model", cfg["model"] or CUSTOM_MODEL_ID]
+            )
             if cfg["apiKey"]:
                 env[API_KEY_ENV] = cfg["apiKey"]
 
