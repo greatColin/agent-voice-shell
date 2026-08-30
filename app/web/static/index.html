@@ -818,6 +818,39 @@
             text-overflow: ellipsis;
         }
 
+        /* ===== Voice Waveform ===== */
+        .voice-wave-pill {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            height: 30px;
+            padding: 0 14px;
+            background: rgba(10, 132, 255, 0.12);
+            backdrop-filter: blur(24px) saturate(160%);
+            -webkit-backdrop-filter: blur(24px) saturate(160%);
+            border: 1px solid rgba(10, 132, 255, 0.32);
+            border-radius: 999px;
+            flex-shrink: 0;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+        }
+        .voice-wave-pill.large {
+            height: 50px;
+            padding: 0 18px;
+            background: rgba(10, 132, 255, 0.14);
+            border-color: rgba(10, 132, 255, 0.36);
+            box-shadow: 0 4px 18px rgba(10, 132, 255, 0.18), inset 0 1px 0 rgba(255,255,255,0.08);
+        }
+        .voice-wave-pill.active { display: flex; animation: voice-wave-in 0.22s ease-out; }
+        @keyframes voice-wave-in {
+            from { opacity: 0; transform: scaleX(0.6); }
+            to { opacity: 1; transform: scaleX(1); }
+        }
+        .voice-wave-pill.error {
+            border-color: rgba(255, 69, 58, 0.4);
+            background: rgba(255, 69, 58, 0.12);
+        }
+        .voice-wave-canvas { display: block; width: 100%; height: 100%; }
+
         /* ===== Empty State ===== */
         .empty-state {
             display: flex;
@@ -1521,6 +1554,9 @@ ${kfs}`;
                 content: () => `
                     <div class="input-wrapper">
                         <input type="text" id="user-input" class="input-field" placeholder="输入消息，或点麦克风说话..." disabled>
+                        <div class="voice-wave-pill" id="voice-wave-pill-input">
+                            <canvas class="voice-wave-canvas" id="voice-wave-input" width="90" height="22"></canvas>
+                        </div>
                         <button class="icon-btn" id="voice-btn" title="语音输入" disabled>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                         </button>
@@ -1617,10 +1653,13 @@ ${kfs}`;
             },
             voice: {
                 title: '语音输入',
-                defaultW: 120, defaultH: 140,
+                defaultW: 140, defaultH: 180,
                 content: () => `
                     <div class="voice-widget">
                         <div class="voice-status" id="voice-status-text">点击开始说话</div>
+                        <div class="voice-wave-pill large" id="voice-wave-pill-main">
+                            <canvas class="voice-wave-canvas" id="voice-wave-main" width="120" height="44"></canvas>
+                        </div>
                         <button class="voice-mic-btn" id="voice-mic-btn">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                         </button>
@@ -1904,6 +1943,159 @@ ${kfs}`;
             });
         }
 
+        // ===== Voice Waveform =====
+        // Live mic amplitude → bar graph, to confirm audio is actually being captured.
+        let voiceAudio = null;
+        function _setupVoiceAudio() {
+            if (voiceAudio) return voiceAudio;
+            const debug = window.__voiceDebug || {};
+            const sourceFactory = debug.createAnalyser;
+            if (typeof sourceFactory === 'function') {
+                voiceAudio = sourceFactory();
+                return voiceAudio;
+            }
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return null;
+            const audioCtx = new Ctx();
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 512;
+            analyser.smoothingTimeConstant = 0.55;
+            voiceAudio = { audioCtx, analyser, sourceNode: null, release: null };
+            if (!navigator.mediaDevices?.getUserMedia) return voiceAudio;
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    const source = audioCtx.createMediaStreamSource(stream);
+                    source.connect(analyser);
+                    voiceAudio.sourceNode = source;
+                    voiceAudio.release = () => {
+                        try { source.disconnect(); } catch (e) {}
+                        stream.getTracks().forEach(t => t.stop());
+                    };
+                })
+                .catch(err => {
+                    console.warn('getUserMedia failed:', err);
+                    voiceAudio.permissionError = err?.name || 'NotAllowedError';
+                });
+            return voiceAudio;
+        }
+
+        function _readAmplitudes(buf, bars) {
+            // Time-domain bytes (0..255, 128=idle). Map to [0..1] per bar.
+            const step = Math.floor(buf.length / bars);
+            const out = new Array(bars);
+            for (let i = 0; i < bars; i++) {
+                let sum = 0;
+                const start = i * step;
+                const end = Math.min(buf.length, start + step);
+                for (let j = start; j < end; j++) {
+                    const v = (buf[j] - 128) / 128;
+                    sum += v * v;
+                }
+                const rms = Math.sqrt(sum / Math.max(1, end - start));
+                // Light compression + minimum noise floor so silence reads as a small idle bar
+                out[i] = Math.min(1, Math.pow(rms * 2.4, 0.85));
+            }
+            return out;
+        }
+
+        const _waveRenderers = [];
+        function _drawWave(canvas, analyser, bars, gain) {
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            const cssW = canvas.clientWidth || canvas.width;
+            const cssH = canvas.clientHeight || canvas.height;
+            if (canvas.width !== cssW * dpr || canvas.height !== cssH * dpr) {
+                canvas.width = cssW * dpr;
+                canvas.height = cssH * dpr;
+            }
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, cssW, cssH);
+
+            let levels;
+            if (analyser) {
+                const buf = new Uint8Array(analyser.fftSize || 512);
+                analyser.getByteTimeDomainData(buf);
+                levels = _readAmplitudes(buf, bars);
+            } else {
+                levels = new Array(bars).fill(0.08);
+            }
+
+            const gap = 3;
+            const barW = Math.max(2, (cssW - gap * (bars - 1)) / bars);
+            const cy = cssH / 2;
+            const maxH = cssH * 0.88;
+            const grad = ctx.createLinearGradient(0, 0, 0, cssH);
+            grad.addColorStop(0, '#5e5ce6');
+            grad.addColorStop(0.5, '#0a84ff');
+            grad.addColorStop(1, '#64d2ff');
+            ctx.fillStyle = grad;
+            ctx.shadowColor = 'rgba(10, 132, 255, 0.45)';
+            ctx.shadowBlur = 6;
+            for (let i = 0; i < bars; i++) {
+                const amp = Math.min(1, (levels[i] || 0) * (gain || 1));
+                const h = Math.max(3, amp * maxH);
+                const x = i * (barW + gap);
+                const y = cy - h / 2;
+                const r = Math.min(barW / 2, 3);
+                ctx.beginPath();
+                ctx.moveTo(x + r, y);
+                ctx.lineTo(x + barW - r, y);
+                ctx.quadraticCurveTo(x + barW, y, x + barW, y + r);
+                ctx.lineTo(x + barW, y + h - r);
+                ctx.quadraticCurveTo(x + barW, y + h, x + barW - r, y + h);
+                ctx.lineTo(x + r, y + h);
+                ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+                ctx.lineTo(x, y + r);
+                ctx.quadraticCurveTo(x, y, x + r, y);
+                ctx.closePath();
+                ctx.fill();
+            }
+            ctx.shadowBlur = 0;
+        }
+
+        function _startWaveforms() {
+            const audio = _setupVoiceAudio();
+            const canvases = Array.from(document.querySelectorAll('#voice-wave-input, #voice-wave-main'));
+            const pills = Array.from(document.querySelectorAll('#voice-wave-pill-input, #voice-wave-pill-main'));
+            pills.forEach(p => { p.classList.add('active'); p.classList.remove('error'); });
+            _waveRenderers.length = 0;
+            canvases.forEach((canvas, idx) => {
+                const bars = canvas.id === 'voice-wave-main' ? 9 : 7;
+                const gain = canvas.id === 'voice-wave-main' ? 1.0 : 1.4;
+                let rafId = null;
+                const loop = () => {
+                    const analyser = voiceAudio?.analyser;
+                    _drawWave(canvas, analyser, bars, gain);
+                    rafId = requestAnimationFrame(loop);
+                };
+                rafId = requestAnimationFrame(loop);
+                _waveRenderers.push({ canvas, pill: pills[idx], cancel: () => rafId && cancelAnimationFrame(rafId) });
+            });
+            // Reflect mic permission failure on the pill (idle bars indicate no signal).
+            const checkPermission = () => {
+                if (voiceAudio?.permissionError) {
+                    pills.forEach(p => p.classList.add('error'));
+                    return true;
+                }
+                return false;
+            };
+            const t = setInterval(() => { if (checkPermission()) clearInterval(t); }, 300);
+            _waveRenderers.push({ cancel: () => clearInterval(t) });
+        }
+
+        function _stopWaveforms() {
+            while (_waveRenderers.length) {
+                try { _waveRenderers.pop().cancel(); } catch (e) {}
+            }
+            document.querySelectorAll('.voice-wave-pill')
+                .forEach(p => p.classList.remove('active'));
+            if (voiceAudio) {
+                try { voiceAudio.release?.(); } catch (e) {}
+                try { voiceAudio.audioCtx?.close?.(); } catch (e) {}
+                voiceAudio = null;
+            }
+        }
+
         function startListening() {
             if (state.isListening) return;
             if (!state.recognition) state.recognition = initBrowserAsr();
@@ -1916,6 +2108,7 @@ ${kfs}`;
             state.isListening = true;
             setListeningVisual(true);
             setAgentStatus('listening');
+            _startWaveforms();
 
             const transcript = document.getElementById('voice-transcript');
             if (transcript) transcript.textContent = '';
@@ -1965,6 +2158,7 @@ ${kfs}`;
             setListeningVisual(false);
             const statusText = document.getElementById('voice-status-text');
             if (statusText) statusText.textContent = '点击开始说话';
+            _stopWaveforms();
             if (state.recognition) {
                 try {
                     state.recognition.onend = null;
