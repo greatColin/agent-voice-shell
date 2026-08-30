@@ -90,13 +90,13 @@ class TestPiAdapterUsesSettings:
 
         cmd = captured["cmd"]
         assert cmd[cmd.index("--provider") + 1] == "voice-shell"
-        assert cmd[cmd.index("--model") + 1] == "main"
+        assert cmd[cmd.index("--model") + 1] == "my-model"
         assert "--api-key" not in cmd
         assert captured["env"]["VOICE_SHELL_API_KEY"] == "sk-test"
         store = json.loads(models_json.read_text())
         prov = store["providers"]["voice-shell"]
         assert prov["baseUrl"] == "http://127.0.0.1:9799/v1"
-        assert prov["models"][0]["id"] == "main"
+        assert prov["models"][0]["id"] == "my-model"
         assert "sk-test" not in models_json.read_text()
         assert "openai" in store["providers"]
 

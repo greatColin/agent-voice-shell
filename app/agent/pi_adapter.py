@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import shlex
 import sys
 from typing import AsyncIterator
@@ -101,6 +102,80 @@ def upsert_custom_provider(cfg: dict) -> bool:
     return True
 
 
+class _ThinkFilter:
+    """Strips model-emitted think blocks from the stream.
+
+    Some models (e.g. MiniMax via an OpenAI-compatible endpoint) emit bare
+    `think` / `think` tags inline in the content instead of a separate
+    reasoning channel. The filter is streaming-aware: it holds back partial
+    tags at the buffer boundary so tags split across chunks are still removed.
+    """
+
+    # MiniMax emits both bare `think`/`think` and bracketed `think`/`think`
+    # tags depending on the run — support both.
+    _OPEN = re.compile(r"(?:^|(?<=\n))(?:<think|think)")
+    _CLOSE = re.compile(r"</?think>|think")
+    _OPEN_CANDIDATES = ("think", "<think")
+    _MAX_HOLD = 8000
+
+    def __init__(self) -> None:
+        self._in_think = False
+        self._hold = ""
+        self._saw_text = False
+
+    def _emit(self, part: str) -> str:
+        """Drop leading whitespace until the first real character (the think
+        block usually leaves a run of newlines before the answer)."""
+        if not self._saw_text:
+            part = part.lstrip()
+            if part.strip():
+                self._saw_text = True
+        return part
+
+    @classmethod
+    def _partial_open(cls, s: str) -> str:
+        """Longest suffix of s that could be the start of an open tag."""
+        for length in range(min(len(s), 8), 0, -1):
+            suffix = s[-length:]
+            if any(c.startswith(suffix) for c in cls._OPEN_CANDIDATES):
+                return suffix
+        return ""
+
+    def feed(self, text: str) -> str:
+        data = self._hold + text
+        self._hold = ""
+        out: list[str] = []
+        while True:
+            if self._in_think:
+                m = self._CLOSE.search(data)
+                if m:
+                    data = data[m.end():]
+                    self._in_think = False
+                elif len(data) >= self._MAX_HOLD:
+                    # No close tag in sight — stop swallowing the answer.
+                    self._in_think = False
+                    out.append(self._emit(data))
+                    data = ""
+                else:
+                    self._hold = data
+                    return "".join(out)
+            else:
+                m = self._OPEN.search(data)
+                if m:
+                    out.append(self._emit(data[: m.start()]))
+                    data = data[m.end():]
+                    self._in_think = True
+                    continue
+                partial = self._partial_open(data)
+                out.append(self._emit(data[: len(data) - len(partial)]))
+                self._hold = partial
+                return "".join(out)
+
+    def flush(self) -> str:
+        held, self._hold = self._hold, ""
+        return self._emit(held)
+
+
 def _resolve_pi_binary() -> str:
     """Locate the `pi` CLI. Honor $PI_BIN override, fall back to PATH lookup."""
     override = os.environ.get("PI_BIN")
@@ -174,9 +249,13 @@ class PiAdapter(AgentClient):
             pi_bin,
             "-p",
             prompt,
-            "--mode", "text",
+            # JSON mode (NDJSON) is required for real token-level streaming:
+            # text mode buffers the whole reply (it is a single line) and
+            # emits it all at once.
+            "--mode", "json",
             "--no-session",
             "--no-tools",
+            "--thinking", "off",
         ]
 
         env = os.environ.copy()
@@ -212,6 +291,7 @@ class PiAdapter(AgentClient):
             return
 
         buf: list[str] = []
+        think = _ThinkFilter()
         assert self._proc.stdout is not None
         try:
             while True:
@@ -224,11 +304,30 @@ class PiAdapter(AgentClient):
                 line = await self._proc.stdout.readline()
                 if not line:
                     break
-                text = line.decode("utf-8", errors="replace").rstrip("\n")
+                raw = line.decode("utf-8", errors="replace").strip()
+                if not raw:
+                    continue
+                text = ""
+                try:
+                    obj = json.loads(raw)
+                except json.JSONDecodeError:
+                    obj = None
+                if isinstance(obj, dict):
+                    if obj.get("type") == "message_update":
+                        ame = obj.get("assistantMessageEvent") or {}
+                        if ame.get("type") == "text_delta":
+                            text = ame.get("delta") or ""
+                    # other events (session/turn/message lifecycle) are ignored
+                else:
+                    # Non-JSON line on stdout — treat as raw text.
+                    text = raw
                 if not text:
                     continue
-                buf.append(text)
-                yield TextChunk(delta=text + "\n")
+                filtered = think.feed(text)
+                if not filtered.strip():
+                    continue
+                buf.append(filtered)
+                yield TextChunk(delta=filtered)
         finally:
             stderr_task: asyncio.Task | None = None
             stderr_chunks: list[str] = []
@@ -256,8 +355,11 @@ class PiAdapter(AgentClient):
                 except asyncio.CancelledError:
                     pass
 
+            tail = think.flush()
+            if tail.strip():
+                buf.append(tail)
             err_text = "".join(stderr_chunks).strip()
-            final = "\n".join(buf).strip() or (
+            final = "".join(buf).strip() or (
                 f"[agent] pi produced no output (exit {self._proc.returncode})."
                 + (f" stderr: {err_text}" if err_text else "")
             )
