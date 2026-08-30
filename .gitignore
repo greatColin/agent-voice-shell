@@ -34,3 +34,6 @@ ENV/
 
 # Stray root-level asset duplicates (canonical copies live under app/web/static/)
 /spritesheet.webp
+
+# Runtime model settings written by the UI settings panel (contains API key)
+/settings.local.json

@@ -166,6 +166,78 @@
             overflow: hidden;
         }
 
+        /* ===== Settings Modal ===== */
+        #settings-overlay {
+            position: fixed; inset: 0; z-index: 2000;
+            display: none;
+            align-items: center; justify-content: center;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        #settings-overlay.open { display: flex; animation: settings-fade 0.18s ease-out; }
+        @keyframes settings-fade { from { opacity: 0; } to { opacity: 1; } }
+        .settings-card {
+            width: min(440px, calc(100vw - 36px));
+            background: rgba(28, 28, 32, 0.82);
+            backdrop-filter: blur(48px) saturate(180%);
+            -webkit-backdrop-filter: blur(48px) saturate(180%);
+            border: 1px solid var(--border-strong);
+            border-radius: 24px;
+            padding: 24px;
+            box-shadow: 0 32px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1);
+            animation: settings-pop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes settings-pop { from { opacity: 0; transform: scale(0.94) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .settings-title { font-size: 17px; font-weight: 700; color: var(--t1); letter-spacing: -0.02em; }
+        .settings-sub { font-size: 12px; color: var(--t3); margin-top: 5px; line-height: 1.5; }
+        .settings-fields { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; }
+        .settings-field label {
+            display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+            text-transform: uppercase; color: var(--t3); margin-bottom: 7px;
+        }
+        .settings-field input {
+            width: 100%; height: 42px; padding: 0 14px;
+            background: var(--glass);
+            backdrop-filter: blur(24px) saturate(160%);
+            -webkit-backdrop-filter: blur(24px) saturate(160%);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            color: var(--t1); font-size: 13.5px; font-family: inherit;
+            outline: none;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+            transition: border-color 0.2s, box-shadow 0.2s;
+            box-sizing: border-box;
+        }
+        .settings-field input::placeholder { color: var(--t3); opacity: 0.65; }
+        .settings-field input:focus { border-color: var(--blue); box-shadow: 0 0 0 3.5px rgba(10, 132, 255, 0.22); }
+        .settings-actions { display: flex; gap: 10px; margin-top: 22px; }
+        .settings-btn {
+            flex: 1; height: 42px;
+            border-radius: 12px; border: 1px solid var(--border);
+            background: var(--glass); color: var(--t2);
+            font-size: 13.5px; font-weight: 600; font-family: inherit;
+            cursor: pointer;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+            transition: all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
+        }
+        .settings-btn:hover { background: var(--glass-strong); color: var(--t1); }
+        .settings-btn.primary {
+            border: none; background: var(--grad); color: #fff;
+            box-shadow: 0 6px 20px rgba(10, 132, 255, 0.42);
+        }
+        .settings-btn.primary:hover { filter: brightness(1.12); transform: translateY(-1px); }
+        .settings-btn.primary:active, .settings-btn:active { transform: scale(0.98); }
+        .settings-toast {
+            margin-top: 14px; padding: 9px 12px;
+            border-radius: 10px; font-size: 12px; font-weight: 500;
+            background: rgba(48, 209, 88, 0.14); color: var(--ok);
+            border: 1px solid rgba(48, 209, 88, 0.3);
+            display: none; text-align: center;
+        }
+        .settings-toast.show { display: block; animation: settings-fade 0.2s; }
+        .settings-toast.error { background: rgba(255, 69, 58, 0.14); color: var(--danger); border-color: rgba(255, 69, 58, 0.3); }
+
         /* ===== Widget ===== */
         .widget {
             position: absolute;
@@ -823,6 +895,10 @@
                 <div class="logo-text">Agent Voice Shell</div>
             </div>
             <div class="header-actions">
+                <button class="hdr-btn" id="btn-settings" title="模型设置">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    模型设置
+                </button>
                 <button class="hdr-btn edit" id="btn-edit">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                     编辑布局
@@ -843,6 +919,32 @@
         </div>
 
         <div id="canvas"></div>
+    </div>
+
+    <div id="settings-overlay">
+        <div class="settings-card" id="settings-card">
+            <div class="settings-title">模型设置</div>
+            <div class="settings-sub">配置 Agent 使用的 OpenAI 格式接口。留空则使用本机 pi 的默认配置。</div>
+            <div class="settings-fields">
+                <div class="settings-field">
+                    <label for="set-base-url">API 地址 (Base URL)</label>
+                    <input type="text" id="set-base-url" placeholder="https://api.openai.com/v1" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="settings-field">
+                    <label for="set-api-key">API Key</label>
+                    <input type="password" id="set-api-key" placeholder="sk-..." autocomplete="off" spellcheck="false">
+                </div>
+                <div class="settings-field">
+                    <label for="set-model">模型</label>
+                    <input type="text" id="set-model" placeholder="gpt-4o-mini" autocomplete="off" spellcheck="false">
+                </div>
+            </div>
+            <div class="settings-actions">
+                <button class="settings-btn" id="set-cancel">取消</button>
+                <button class="settings-btn primary" id="set-save">保存</button>
+            </div>
+            <div class="settings-toast" id="set-toast">已保存</div>
+        </div>
     </div>
 
     <div id="library-panel">
@@ -2015,6 +2117,51 @@ ${kfs}`;
                         saveLayout();
                     });
                 }
+            });
+
+            // Settings modal
+            const settingsOverlay = $('settings-overlay');
+            const settingsToast = $('set-toast');
+            let toastTimer = null;
+            function showSettingsToast(msg, isError) {
+                settingsToast.textContent = msg;
+                settingsToast.classList.toggle('error', !!isError);
+                settingsToast.classList.add('show');
+                if (toastTimer) clearTimeout(toastTimer);
+                toastTimer = setTimeout(() => settingsToast.classList.remove('show'), 2200);
+            }
+            function openSettings() {
+                settingsOverlay.classList.add('open');
+                settingsToast.classList.remove('show');
+                fetch('/api/settings').then(r => r.json()).then(d => {
+                    $('set-base-url').value = d.baseUrl || '';
+                    $('set-api-key').value = d.apiKey || '';
+                    $('set-model').value = d.model || '';
+                }).catch(() => {});
+            }
+            function closeSettings() { settingsOverlay.classList.remove('open'); }
+            $('btn-settings').addEventListener('click', openSettings);
+            $('set-cancel').addEventListener('click', closeSettings);
+            settingsOverlay.addEventListener('click', e => {
+                if (e.target === settingsOverlay) closeSettings();
+            });
+            $('set-save').addEventListener('click', () => {
+                const body = {
+                    baseUrl: $('set-base-url').value.trim(),
+                    apiKey: $('set-api-key').value.trim(),
+                    model: $('set-model').value.trim(),
+                };
+                fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                }).then(r => {
+                    if (!r.ok) throw new Error('save failed');
+                    showSettingsToast('已保存，下一条消息生效');
+                }).catch(() => showSettingsToast('保存失败，请重试', true));
+            });
+            document.addEventListener('keydown', e => {
+                if (e.key === 'Escape' && settingsOverlay.classList.contains('open')) closeSettings();
             });
 
             // Library items

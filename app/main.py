@@ -9,6 +9,25 @@ from app.web.ws_endpoint import ws_endpoint
 app = FastAPI()
 
 AVATARS_DIR = "app/web/static/avatars"
+SETTING_KEYS = ("baseUrl", "apiKey", "model")
+
+
+def _settings_path() -> str:
+    return os.environ.get("VOICE_SHELL_SETTINGS", "settings.local.json")
+
+
+def _load_settings() -> dict:
+    data = {k: "" for k in SETTING_KEYS}
+    path = _settings_path()
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                stored = json.load(f)
+            for k in SETTING_KEYS:
+                data[k] = str(stored.get(k, "") or "").strip()
+        except Exception:
+            pass
+    return data
 
 
 @app.get("/")
@@ -59,6 +78,25 @@ async def save_avatar_meta(name: str, request: Request):
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(body, f, indent=2, ensure_ascii=False)
     return {"ok": True, "path": f"static/avatars/{name}/meta.json"}
+
+
+@app.get("/api/settings")
+async def get_settings():
+    return _load_settings()
+
+
+@app.post("/api/settings")
+async def save_settings(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid json"}, status_code=400)
+    data = {}
+    for k in SETTING_KEYS:
+        data[k] = str(body.get(k, "") or "").strip()
+    with open(_settings_path(), "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    return {"ok": True}
 
 
 app.websocket("/ws")(ws_endpoint)

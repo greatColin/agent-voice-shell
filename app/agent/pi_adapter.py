@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import shlex
 import sys
@@ -6,6 +7,97 @@ from typing import AsyncIterator
 
 from app.agent.base import AgentClient
 from app.events.events import Complete, TextChunk, VoiceEvent
+
+RUNTIME_SETTING_KEYS = ("baseUrl", "apiKey", "model")
+
+PROVIDER_ID = "voice-shell"
+CUSTOM_MODEL_ID = "main"
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+API_KEY_ENV = "VOICE_SHELL_API_KEY"
+
+
+def _settings_path() -> str:
+    return os.environ.get("VOICE_SHELL_SETTINGS", "settings.local.json")
+
+
+def _load_runtime_settings() -> dict:
+    """Read runtime model settings written by the UI (GET/POST /api/settings)."""
+    data = {k: "" for k in RUNTIME_SETTING_KEYS}
+    try:
+        with open(_settings_path(), "r", encoding="utf-8") as f:
+            stored = json.load(f)
+        for k in RUNTIME_SETTING_KEYS:
+            data[k] = str(stored.get(k, "") or "").strip()
+    except Exception:
+        pass
+    return data
+
+
+def _models_json_path() -> str:
+    return os.environ.get(
+        "PI_MODELS_JSON", os.path.expanduser("~/.pi/agent/models.json")
+    )
+
+
+def upsert_custom_provider(cfg: dict) -> bool:
+    """Register the user's OpenAI-compatible endpoint as a dedicated `voice-shell`
+    provider in pi's models.json.
+
+    pi resolves custom endpoints through models.json providers (there is no
+    base-URL flag or env var). A dedicated provider keeps the user's own
+    openai/anthropic/etc. configuration untouched. The API key is referenced as
+    $VOICE_SHELL_API_KEY and injected into the pi subprocess environment, so no
+    secret is ever written to models.json. Returns True when a custom endpoint
+    is configured, False to keep pi on its default setup.
+    """
+    if not (cfg.get("baseUrl") or cfg.get("model")):
+        return False
+    entry = {
+        "name": "Voice Shell Provider",
+        "baseUrl": cfg.get("baseUrl") or DEFAULT_OPENAI_BASE_URL,
+        "api": "openai-completions",
+        "models": [
+            {
+                "id": CUSTOM_MODEL_ID,
+                "name": cfg.get("model") or "Voice Shell Model",
+                "reasoning": False,
+                "input": ["text"],
+                "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+                "contextWindow": 128000,
+                "maxTokens": 8192,
+            }
+        ],
+    }
+    if cfg.get("apiKey"):
+        # Keep the secret out of models.json on disk — pi resolves $VAR refs
+        # at request time from the subprocess environment.
+        entry["apiKey"] = f"${API_KEY_ENV}"
+    path = _models_json_path()
+    store = {}
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                store = json.load(f)
+        except Exception:
+            # Keep a backup rather than silently dropping the user's config.
+            try:
+                with open(path + ".bak", "w", encoding="utf-8") as f:
+                    f.write(open(path, "r", encoding="utf-8", errors="replace").read())
+            except Exception:
+                pass
+            store = {}
+    if not isinstance(store, dict):
+        store = {}
+    providers = store.setdefault("providers", {})
+    if not isinstance(providers, dict):
+        providers = store["providers"] = {}
+    providers[PROVIDER_ID] = entry
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(store, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, path)
+    return True
 
 
 def _resolve_pi_binary() -> str:
@@ -86,6 +178,13 @@ class PiAdapter(AgentClient):
             "--no-tools",
         ]
 
+        env = os.environ.copy()
+        cfg = _load_runtime_settings()
+        if upsert_custom_provider(cfg):
+            cmd.extend(["--provider", PROVIDER_ID, "--model", CUSTOM_MODEL_ID])
+            if cfg["apiKey"]:
+                env[API_KEY_ENV] = cfg["apiKey"]
+
         extra_args = os.environ.get("PI_ARGS")
         if extra_args:
             cmd.extend(shlex.split(extra_args))
@@ -95,6 +194,7 @@ class PiAdapter(AgentClient):
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=env,
             )
         except FileNotFoundError as e:
             yield Complete(
