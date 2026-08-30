@@ -11,5 +11,10 @@ if ! command -v pi &> /dev/null; then
     exit 1
 fi
 
+PYTHON=python3
+if [ -x .venv/bin/python3 ]; then
+    PYTHON=.venv/bin/python3
+fi
+
 echo "Starting server on http://localhost:8000"
-python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+$PYTHON -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
