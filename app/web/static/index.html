@@ -602,6 +602,21 @@
             box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.08), inset 0 1px 0 rgba(255,255,255,0.08);
         }
         .provider-item.disabled { opacity: 0.4; cursor: not-allowed; }
+        .tts-voice-row {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 11px 2px;
+            font-size: 11px; color: var(--t3);
+        }
+        .tts-voice-row select {
+            flex: 1; min-width: 0;
+            background: rgba(255,255,255,0.05);
+            color: var(--t1);
+            border: 1px solid var(--border-strong);
+            border-radius: 8px;
+            font-size: 11px;
+            padding: 4px 6px;
+            outline: none;
+        }
         .provider-left { display: flex; align-items: center; gap: 9px; }
         .provider-radio {
             width: 16px; height: 16px;
@@ -840,6 +855,10 @@
             border-color: rgba(10, 132, 255, 0.36);
             box-shadow: 0 4px 18px rgba(10, 132, 255, 0.18), inset 0 1px 0 rgba(255,255,255,0.08);
         }
+        /* Fixed width: the canvas attribute width is rewritten every frame (cssW * dpr),
+           which feeds back into the percentage CSS width and makes an auto-width
+           pill grow indefinitely under fractional zoom. */
+        #voice-wave-pill-input { width: 110px; }
         .voice-wave-pill.active { display: flex; animation: voice-wave-in 0.22s ease-out; }
         @keyframes voice-wave-in {
             from { opacity: 0; transform: scaleX(0.6); }
@@ -1027,10 +1046,16 @@
             startW: 0, startH: 0,
             currentText: '',
             lastFinalText: '',
+            lastSpokenLength: 0,
+            pendingTail: '',
             asrProvider: 'browser-asr',
             ttsProvider: 'browser-tts',
+            ttsVoiceName: localStorage.getItem('voice-shell-tts-voice') || '',
             isSpeaking: false,
+            assistantActive: false,
             isListening: false,
+            voiceBase: '',
+            voiceFinals: '',
             recognition: null,
             whisperPipeline: null,
             whisperLoading: false,
@@ -1486,7 +1511,7 @@ ${kfs}`;
             },
             providers: {
                 title: '语音引擎',
-                defaultW: 200, defaultH: 210,
+                defaultW: 200, defaultH: 300,
                 content: () => `
                     <div class="provider-section">
                         <div class="provider-section-title">ASR 语音识别</div>
@@ -1514,6 +1539,10 @@ ${kfs}`;
                             </div>
                             <span class="provider-status supported">在线</span>
                         </div>
+                        <div class="tts-voice-row">
+                            <span>音色</span>
+                            <select id="tts-voice-select"></select>
+                        </div>
                     </div>
                 `,
                 onCreate: (widget) => {
@@ -1533,6 +1562,7 @@ ${kfs}`;
                             }
                         });
                     });
+                    refreshTtsVoiceSelect();
                 }
             },
             messages: {
@@ -1573,9 +1603,15 @@ ${kfs}`;
                     function sendText() {
                         const text = userInput.value.trim();
                         if (!text) return;
+                        // The previous assistant turn was interrupted (no
+                        // generation_complete) — close its bubble so the next
+                        // response starts a fresh message.
+                        if (state.assistantActive) finalizeAssistantMessage();
                         appendMessage('user', text);
                         state.ws.send(JSON.stringify({ type: 'user_input', text }));
                         userInput.value = '';
+                        state.voiceBase = '';
+                        state.voiceFinals = '';
                         const btn = document.getElementById('interrupt-btn');
                         if (btn) btn.disabled = false;
                     }
@@ -1591,7 +1627,7 @@ ${kfs}`;
                     if (voiceBtn) {
                         voiceBtn.addEventListener('click', () => {
                             if (voiceBtn.disabled) return;
-                            if (state.isListening) stopListening();
+                            if (state.isListening) stopListening(true);
                             else startListening();
                         });
                     }
@@ -1670,7 +1706,7 @@ ${kfs}`;
                     const micBtn = document.getElementById('voice-mic-btn');
                     if (!micBtn) return;
                     micBtn.addEventListener('click', () => {
-                        if (state.isListening) stopListening();
+                        if (state.isListening) stopListening(true);
                         else startListening();
                     });
                 }
@@ -1879,6 +1915,8 @@ ${kfs}`;
         function appendAssistantText(delta) {
             let lastMsg = document.querySelector('.msg-item.assistant:last-child');
             if (!lastMsg) {
+                state.lastSpokenLength = 0;
+                state.assistantActive = true;
                 const list = document.getElementById('messages-list');
                 if (!list) return;
                 lastMsg = document.createElement('div');
@@ -1904,9 +1942,15 @@ ${kfs}`;
             state.currentText += delta;
             lastMsg.querySelector('.msg-text').textContent = state.currentText;
 
-            if (state.currentText.length > 10 && !state.isSpeaking) {
-                const toSpeak = state.currentText.slice(state.lastFinalText.length);
-                if (toSpeak.length > 3) speakText(toSpeak);
+            // Speak only the not-yet-spoken tail; while an utterance is still
+            // playing (or the mic is open), chunks accumulate and get included
+            // in the next speak.
+            if (!state.isSpeaking && !state.isListening) {
+                const toSpeak = state.currentText.slice(state.lastSpokenLength);
+                if (toSpeak.length > 3) {
+                    speakText(toSpeak);
+                    state.lastSpokenLength = state.currentText.length;
+                }
             }
         }
 
@@ -1918,22 +1962,77 @@ ${kfs}`;
             }
             state.lastFinalText = state.currentText;
             state.currentText = '';
+            state.lastSpokenLength = 0;
+            state.assistantActive = false;
             if (!state.isListening) setAgentStatus('idle');
         }
 
         // ASR/TTS
+        // Lower = better. Prefer modern neural voices over legacy SAPI ones.
+        function voiceRank(v) {
+            const n = v.name.toLowerCase();
+            if (n.includes('huihui')) return 0;
+            if (n.includes('neural') || n.includes('online') || n.includes('natural')) return 1;
+            if (n.includes('yating')) return 1;
+            if (n.includes('tingting') || n.includes('meijia')) return 2;
+            return 3;
+        }
+
+        function pickZhVoice() {
+            const voices = window.speechSynthesis.getVoices();
+            if (state.ttsVoiceName) {
+                const chosen = voices.find(v => v.name === state.ttsVoiceName);
+                if (chosen) return chosen;
+            }
+            const zh = voices.filter(v => (v.lang || '').toLowerCase().startsWith('zh'));
+            zh.sort((a, b) => voiceRank(a) - voiceRank(b) || a.name.localeCompare(b.name));
+            return zh[0] || null;
+        }
+
+        function refreshTtsVoiceSelect() {
+            const sel = document.getElementById('tts-voice-select');
+            if (!sel || !window.speechSynthesis) return;
+            const zh = window.speechSynthesis.getVoices()
+                .filter(v => (v.lang || '').toLowerCase().startsWith('zh'));
+            zh.sort((a, b) => voiceRank(a) - voiceRank(b) || a.name.localeCompare(b.name));
+            if (!zh.length) return;
+            sel.innerHTML = zh.map(v => `<option value="${v.name.replace(/"/g, '&quot;')}">${v.name}</option>`).join('');
+            const current = zh.find(v => v.name === state.ttsVoiceName) || zh[0];
+            sel.value = current.name;
+            state.ttsVoiceName = current.name;
+            sel.onchange = () => {
+                state.ttsVoiceName = sel.value;
+                localStorage.setItem('voice-shell-tts-voice', sel.value);
+                speakText('你好，这是一段试听。');
+            };
+        }
+
         function speakText(text) {
             if (state.ttsProvider !== 'browser-tts' || !window.speechSynthesis) return;
             const u = new SpeechSynthesisUtterance(text);
             u.lang = 'zh-CN'; u.rate = 1.2;
+            const voice = pickZhVoice();
+            if (voice) u.voice = voice;
             u.onstart = () => { state.isSpeaking = true; setAgentStatus('speaking'); };
-            u.onend = u.onerror = () => { state.isSpeaking = false; if (!state.isListening) setAgentStatus('idle'); };
+            u.onend = u.onerror = () => {
+                state.isSpeaking = false;
+                if (state.pendingTail) {
+                    const tail = state.pendingTail;
+                    state.pendingTail = '';
+                    speakText(tail);
+                } else if (!state.isListening) setAgentStatus('idle');
+            };
             window.speechSynthesis.speak(u);
         }
 
         function stopTts() {
-            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            if (window.speechSynthesis) {
+                // Chrome quirk: cancel() while paused can leave the queue paused forever.
+                if (speechSynthesis.paused) { try { speechSynthesis.resume(); } catch (e) {} }
+                window.speechSynthesis.cancel();
+            }
             state.isSpeaking = false;
+            state.pendingTail = '';
         }
 
         function setListeningVisual(on) {
@@ -2109,26 +2208,34 @@ ${kfs}`;
             setListeningVisual(true);
             setAgentStatus('listening');
             _startWaveforms();
+            // Barge-in: the AI yields its voice to the user (stops, not pauses).
+            stopTts();
 
-            const transcript = document.getElementById('voice-transcript');
-            if (transcript) transcript.textContent = '';
+            // Recognized text lands in the message box: live interim results are
+            // shown as they arrive, finals accumulate, and the user sends manually.
+            // A new voice round starts fresh — clear the box so the previous
+            // round's text isn't merged into this one.
+            const inp = document.getElementById('user-input');
+            if (inp) inp.value = '';
+            state.voiceBase = '';
+            state.voiceFinals = '';
+
             const statusText = document.getElementById('voice-status-text');
             if (statusText) statusText.textContent = '正在聆听...';
 
             const recognition = state.recognition;
             recognition.onresult = (e) => {
-                let interim = '', final = '';
+                let interim = '';
                 for (let i = e.resultIndex; i < e.results.length; i++) {
                     const t = e.results[i][0].transcript;
-                    if (e.results[i].isFinal) final += t;
+                    if (e.results[i].isFinal) state.voiceFinals += t;
                     else interim += t;
                 }
+                const shown = state.voiceBase + state.voiceFinals + interim;
                 const t = document.getElementById('voice-transcript');
-                if (t) t.textContent = interim || final;
-                if (final) {
-                    if (t) t.textContent = final;
-                    sendVoiceMessage(final);
-                }
+                if (t) t.textContent = shown;
+                const box = document.getElementById('user-input');
+                if (box) box.value = shown;
             };
             recognition.onend = () => {
                 if (!state.isListening) return;
@@ -2152,7 +2259,7 @@ ${kfs}`;
             }
         }
 
-        function stopListening() {
+        function stopListening(send = false) {
             const wasListening = state.isListening;
             state.isListening = false;
             setListeningVisual(false);
@@ -2168,15 +2275,13 @@ ${kfs}`;
                 } catch (e) {}
             }
             if (wasListening && !state.isSpeaking) setAgentStatus('idle');
-        }
-
-        function sendVoiceMessage(text) {
-            if (!text.trim()) return;
-            appendMessage('user', text);
-            if (state.ws?.readyState === WebSocket.OPEN) {
-                state.ws.send(JSON.stringify({ type: 'user_input', text }));
-                const btn = document.getElementById('interrupt-btn');
-                if (btn) btn.disabled = false;
+            // Second tap on the mic: recognition is done — send what's in the box.
+            if (send) {
+                const box = document.getElementById('user-input');
+                if (box && box.value.trim()) {
+                    const btn = document.getElementById('send-btn');
+                    if (btn) btn.click();
+                }
             }
         }
 
@@ -2200,6 +2305,22 @@ ${kfs}`;
                 const msg = JSON.parse(e.data);
                 if (msg.type === 'assistant_text_delta') appendAssistantText(msg.delta);
                 else if (msg.type === 'generation_complete') {
+                    // Queue everything not yet spoken as ONE utterance: the browser
+                    // synthesizes and plays it continuously (no per-utterance start
+                    // latency gaps), so the tail plays back linearly.
+                    const rest = state.currentText.slice(state.lastSpokenLength);
+                    if (rest.trim().length > 0) {
+                        state.lastSpokenLength = state.currentText.length;
+                        if (state.isListening) {
+                            // Mic still open — the turn is being barged in; the
+                            // tail is stale once the user sends, so drop it.
+                        } else if (state.isSpeaking) {
+                            // Current utterance still playing — it picks this up on end.
+                            state.pendingTail = rest;
+                        } else {
+                            speakText(rest);
+                        }
+                    }
                     finalizeAssistantMessage();
                     const inp = document.getElementById('user-input');
                     const vbtn = document.getElementById('voice-btn');
@@ -2274,7 +2395,7 @@ ${kfs}`;
             const cx = Math.round((w - colW) / 2);
             return [
                 { type: 'status', x: w - 210, y: 16, w: 194, h: 195 },
-                { type: 'providers', x: 16, y: 16, w: 200, h: 262 },
+                { type: 'providers', x: 16, y: 16, w: 200, h: 300 },
                 { type: 'avatar', x: cx + Math.round(colW / 2) - 150, y: 28, w: 300, h: 340 },
                 { type: 'messages', x: cx, y: 380, w: colW, h: Math.max(180, h - 483) },
                 { type: 'input', x: cx, y: h - 88, w: colW, h: 70 }
@@ -2369,6 +2490,16 @@ ${kfs}`;
                     }
                 });
             });
+
+            // Preload browser TTS voices (getVoices() is empty until voiceschanged on some browsers).
+            if (window.speechSynthesis) {
+                window.speechSynthesis.getVoices();
+                window.speechSynthesis.onvoiceschanged = () => {
+                    window.speechSynthesis.getVoices();
+                    refreshTtsVoiceSelect();
+                };
+            }
+            refreshTtsVoiceSelect();
 
             setAgentStatus('idle');
             connect();

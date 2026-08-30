@@ -65,7 +65,9 @@ class TestInterruptionHandler:
         assert agent.cancel_called is True
         assert state.flush_output_called is True
         assert session.assistant_partial == ""
-        assert len(session.messages) == 1
+        # No user turn is added, but the truncated assistant partial is kept.
+        assert len(session.messages) == 2
+        assert session.messages[-1] == {"role": "assistant", "content": "partial response"}
         assert state.restart_generation_called is False
 
     @pytest.mark.asyncio
