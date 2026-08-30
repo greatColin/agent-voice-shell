@@ -1,0 +1,27 @@
+{
+  "cols": 8,
+  "frameW": 192,
+  "frameH": 208,
+  "sheetH": 1872,
+  "rows": {
+    "idle": 0,
+    "listening": 1,
+    "thinking": 2,
+    "speaking": 3,
+    "hover": 4,
+    "drag-left": 5,
+    "drag-right": 6,
+    "sleeping": 7
+  },
+  "colsByRow": {
+    "0": 6,
+    "1": 8,
+    "2": 8,
+    "3": 4,
+    "4": 5,
+    "5": 8,
+    "6": 6,
+    "7": 6,
+    "8": 6
+  }
+}
