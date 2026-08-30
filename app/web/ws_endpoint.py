@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from fastapi import WebSocket, WebSocketDisconnect
 from app.session.session import Session
 from app.agent.pi_adapter import PiAdapter
@@ -28,6 +29,30 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+# --- TTS-matched pacing (pseudo full-duplex) -----------------------------------
+# The LLM produces tokens far faster than anyone speaks. We buffer its output
+# and release it sentence by sentence at roughly TTS speed, so the text display
+# and the voice stay in sync and the user can barge in naturally.
+_SENTENCE_END_RE = re.compile(r"[。！？!?；;!?\n]")
+PACE_SECONDS_PER_CHAR = 0.18  # ~5.5 chars/s; browser TTS at rate 1.2 is ~4-5
+
+
+def _next_speak_unit(buf: str) -> tuple[str, str]:
+    """Split buf into (unit to release now, remainder).
+
+    Releases everything up to the last sentence-ending punctuation. With no
+    boundary yet, releases a fixed-size piece once the buffer is long enough,
+    so TTS always has something to say.
+    """
+    last = 0
+    for m in _SENTENCE_END_RE.finditer(buf):
+        last = m.end()
+    if last:
+        return buf[:last], buf[last:]
+    if len(buf) >= 12:
+        return buf[:12], buf[12:]
+    return "", buf
+
 
 async def ws_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -52,15 +77,32 @@ async def ws_endpoint(websocket: WebSocket):
 
     async def run_agent_stream():
         nonlocal pending_task
+        buf = ""
+
+        async def pump(flush_all: bool = False):
+            """Release speakable units from buf at TTS speed."""
+            nonlocal buf
+            while buf and not cancel_event.is_set():
+                if flush_all:
+                    unit, buf = buf, ""
+                else:
+                    unit, buf = _next_speak_unit(buf)
+                    if not unit:
+                        return
+                await send_text_delta(unit)
+                session.append_assistant_partial(unit)
+                await asyncio.sleep(len(unit) * PACE_SECONDS_PER_CHAR)
+
         try:
             async with agent:
                 async for event in agent.stream(session.get_messages()):
                     if cancel_event.is_set():
                         break
                     if isinstance(event, TextChunk):
-                        await send_text_delta(event.delta)
-                        session.append_assistant_partial(event.delta)
+                        buf += event.delta
+                        await pump()
                     elif isinstance(event, Complete):
+                        await pump(flush_all=True)
                         session.finalize_assistant()
                         await send_complete(event.final_text)
                         break
@@ -104,8 +146,9 @@ async def ws_endpoint(websocket: WebSocket):
                             await pending_task
                         except asyncio.CancelledError:
                             pass
+                    # handle_interruption adds the user turn (and finalizes the
+                    # truncated assistant partial) — don't add it twice.
                     await handle_interruption("user_input", {"text": text}, agent, session, state)
-                    session.add_user_turn(text)
                     await state.on_input_received()
                     cancel_event.clear()
                     pending_task = asyncio.create_task(run_agent_stream())
