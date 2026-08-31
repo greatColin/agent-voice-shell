@@ -70,7 +70,11 @@ async def test_ws_interrupt_cancels_generation():
 
     assert agent.cancel_called is True
     assert session.assistant_partial == ""
-    assert len(session.messages) == 1
+    # finalize_assistant() promotes the delivered partial to a truncated
+    # assistant turn so the next turn's context reflects what the user heard.
+    assert len(session.messages) == 2
+    assert session.messages[-1]["role"] == "assistant"
+    assert session.messages[-1]["content"] == "partial"
 
 
 @pytest.mark.asyncio
