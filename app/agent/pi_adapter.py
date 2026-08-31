@@ -114,7 +114,10 @@ class _ThinkFilter:
     # MiniMax emits both bare `think`/`think` and bracketed `think`/`think`
     # tags depending on the run — support both.
     _OPEN = re.compile(r"(?:^|(?<=\n))(?:<think|think)")
-    _CLOSE = re.compile(r"</?think>|think")
+    # The close tag must also be at line start (mirroring OPEN) — otherwise a
+    # bare `think` inside the reasoning text (e.g. "I think about this") would
+    # prematurely terminate the think block and leak reasoning into the answer.
+    _CLOSE = re.compile(r"(?:^|(?<=\n))think|</?think>")
     _OPEN_CANDIDATES = ("think", "<think")
     _MAX_HOLD = 8000
 
