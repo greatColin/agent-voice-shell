@@ -1010,6 +1010,7 @@
     </div>
 
     <div id="settings-overlay">
+        <audio id="sherpa-tts-audio" style="display:none" preload="none"></audio>
         <div class="settings-card" id="settings-card">
             <div class="settings-title">模型设置</div>
             <div class="settings-sub">配置 Agent 使用的 OpenAI 格式接口。留空则使用本机 pi 的默认配置。</div>
@@ -1091,6 +1092,7 @@
             asrProvider: 'browser-asr',
             ttsProvider: 'browser-tts',
             ttsVoiceName: localStorage.getItem('voice-shell-tts-voice') || '',
+            localSherpaVoices: [],
             isSpeaking: false,
             assistantActive: false,
             isListening: false,
@@ -1570,20 +1572,27 @@ ${kfs}`;
                             <span class="provider-status loading" id="status-whisper">加载</span>
                         </div>
                     </div>
-                    <div class="provider-section">
-                        <div class="provider-section-title">TTS 语音合成</div>
-                        <div class="provider-item selected" data-provider="browser-tts">
-                            <div class="provider-left">
-                                <div class="provider-radio"></div>
-                                <div><div class="provider-name">Browser</div><div class="provider-desc">Speech Synthesis</div></div>
+                        <div class="provider-section">
+                            <div class="provider-section-title">TTS 语音合成</div>
+                            <div class="provider-item selected" data-provider="browser-tts">
+                                <div class="provider-left">
+                                    <div class="provider-radio"></div>
+                                    <div><div class="provider-name">Browser</div><div class="provider-desc">Speech Synthesis</div></div>
+                                </div>
+                                <span class="provider-status supported">在线</span>
                             </div>
-                            <span class="provider-status supported">在线</span>
+                            <div class="provider-item" data-provider="sherpa-onnx">
+                                <div class="provider-left">
+                                    <div class="provider-radio"></div>
+                                    <div><div class="provider-name">本地 (sherpa-onnx)</div><div class="provider-desc">离线 · 情感 TTS</div></div>
+                                </div>
+                                <span class="provider-status" id="sherpa-tts-status">--</span>
+                            </div>
+                            <div class="tts-voice-row">
+                                <span>音色</span>
+                                <select id="tts-voice-select"></select>
+                            </div>
                         </div>
-                        <div class="tts-voice-row">
-                            <span>音色</span>
-                            <select id="tts-voice-select"></select>
-                        </div>
-                    </div>
                 `,
                 onCreate: (widget) => {
                     document.querySelectorAll('.provider-item[data-provider]').forEach(item => {
@@ -1595,10 +1604,11 @@ ${kfs}`;
                                 item.classList.add('selected');
                                 state.asrProvider = provider;
                             }
-                            if (provider === 'browser-tts') {
-                                document.querySelectorAll('[data-provider="browser-tts"]').forEach(o => o.classList.remove('selected'));
+                            if (provider === 'browser-tts' || provider === 'sherpa-onnx') {
+                                document.querySelectorAll('[data-provider="browser-tts"], [data-provider="sherpa-onnx"]').forEach(o => o.classList.remove('selected'));
                                 item.classList.add('selected');
                                 state.ttsProvider = provider;
+                                refreshTtsVoiceSelect();
                             }
                         });
                     });
@@ -2047,12 +2057,37 @@ ${kfs}`;
             return zh[0] || null;
         }
 
-        function refreshTtsVoiceSelect() {
+        async function refreshTtsVoiceSelect() {
             const sel = document.getElementById('tts-voice-select');
-            if (!sel || !window.speechSynthesis) return;
+            if (!sel) return;
+            if (state.ttsProvider === 'sherpa-onnx') {
+                const statusEl = document.getElementById('sherpa-tts-status');
+                try {
+                    const res = await fetch('/api/tts/status');
+                    const data = await res.json();
+                    if (!data.ready) {
+                        if (statusEl) { statusEl.textContent = '未就绪'; statusEl.className = 'provider-status'; }
+                        sel.innerHTML = '<option value="">-- 模型未就绪 --</option>';
+                        return;
+                    }
+                    state.localSherpaVoices = data.voices || [];
+                    if (statusEl) { statusEl.textContent = '在线'; statusEl.className = 'provider-status supported'; }
+                    sel.innerHTML = (data.voices || []).map(v =>
+                        `<option value="${v.id}">${v.label}</option>`
+                    ).join('');
+                    sel.onchange = () => { speakText('你好，这是一段试听。'); };
+                    sel.onchange = null;
+                } catch (e) {
+                    if (statusEl) { statusEl.textContent = '离线'; statusEl.className = 'provider-status'; }
+                    sel.innerHTML = '<option value="">-- 连接失败 --</option>';
+                }
+                return;
+            }
+            // browser-tts
+            if (!window.speechSynthesis) return;
             const zh = window.speechSynthesis.getVoices()
                 .filter(v => (v.lang || '').toLowerCase().startsWith('zh'));
-            zh.sort((a, b) => voiceRank(a) - voiceRank(b) || a.name.localeCompare(b.name));
+            zh.sort((a, b) => voiceRank(a) - voiceRank(b) || a.name.localeCompare(a.name, b.name));
             if (!zh.length) return;
             sel.innerHTML = zh.map(v => `<option value="${v.name.replace(/"/g, '&quot;')}">${v.name}</option>`).join('');
             const current = zh.find(v => v.name === state.ttsVoiceName) || zh[0];
@@ -2066,6 +2101,7 @@ ${kfs}`;
         }
 
         function speakText(text) {
+            if (state.ttsProvider === 'sherpa-onnx') { speakSherpaTts(text); return; }
             if (state.ttsProvider !== 'browser-tts' || !window.speechSynthesis) return;
             const u = new SpeechSynthesisUtterance(text);
             u.lang = 'zh-CN'; u.rate = 1.2;
@@ -2085,12 +2121,44 @@ ${kfs}`;
 
         function stopTts() {
             if (window.speechSynthesis) {
-                // Chrome quirk: cancel() while paused can leave the queue paused forever.
                 if (speechSynthesis.paused) { try { speechSynthesis.resume(); } catch (e) {} }
                 window.speechSynthesis.cancel();
             }
+            const audioEl = document.getElementById('sherpa-tts-audio');
+            if (audioEl) { audioEl.pause(); audioEl.src = ''; }
             state.isSpeaking = false;
             state.pendingTail = '';
+        }
+
+        function speakSherpaTts(text) {
+            const voiceSel = document.getElementById('tts-voice-select');
+            const voiceId = voiceSel && voiceSel.value !== '' ? voiceSel.value : '0';
+            const audioEl = document.getElementById('sherpa-tts-audio');
+            if (!audioEl) return;
+            const url = `/api/tts/speak?text=${encodeURIComponent(text)}&voice=${encodeURIComponent(voiceId)}&speed=1.0`;
+            state.isSpeaking = true;
+            setAgentStatus('speaking');
+            audioEl.src = url;
+            audioEl.play().catch(() => {
+                state.isSpeaking = false;
+                if (!state.isListening) setAgentStatus('idle');
+            });
+            audioEl.onended = () => {
+                audioEl.onended = null;
+                state.isSpeaking = false;
+                if (state.pendingTail) {
+                    const tail = state.pendingTail;
+                    state.pendingTail = '';
+                    speakText(tail);
+                } else if (!state.isListening) {
+                    setAgentStatus('idle');
+                }
+            };
+            audioEl.onerror = () => {
+                audioEl.onerror = null;
+                state.isSpeaking = false;
+                if (!state.isListening) setAgentStatus('idle');
+            };
         }
 
         function setListeningVisual(on) {
@@ -2720,6 +2788,19 @@ ${kfs}`;
                 };
             }
             refreshTtsVoiceSelect();
+
+            // 页面加载时检查本地 TTS 就绪状态
+            fetch('/api/tts/status').then(r => r.json()).then(data => {
+                const el = document.getElementById('sherpa-tts-status');
+                if (!el) return;
+                if (data.ready) {
+                    el.textContent = '在线';
+                    el.className = 'provider-status supported';
+                } else {
+                    el.textContent = '离线';
+                    el.className = 'provider-status';
+                }
+            }).catch(() => {});
 
             setAgentStatus('idle');
             connect();

@@ -1,10 +1,11 @@
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse, JSONResponse, Response
 import json
 import os
 
 from app.web.ws_endpoint import ws_endpoint
+from app.tts.service import service as tts_service, TtsUnavailable
 
 app = FastAPI()
 
@@ -97,6 +98,27 @@ async def save_settings(request: Request):
     with open(_settings_path(), "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
     return {"ok": True}
+
+
+# ---- 本地 TTS (sherpa-onnx) ---------------------------------------------
+
+
+@app.get("/api/tts/status")
+async def tts_status():
+    return tts_service.status()
+
+
+@app.get("/api/tts/speak")
+async def tts_speak(text: str = "", voice: str = "", speed: float = 1.0):
+    if not text.strip():
+        return JSONResponse({"error": "empty text"}, status_code=400)
+    try:
+        wav = await tts_service.synthesize(text, voice, speed)
+    except TtsUnavailable as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+    except Exception as e:
+        return JSONResponse({"error": f"tts failed: {e}"}, status_code=500)
+    return Response(content=wav, media_type="audio/wav")
 
 
 app.websocket("/ws")(ws_endpoint)

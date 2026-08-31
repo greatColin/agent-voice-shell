@@ -37,3 +37,6 @@ ENV/
 
 # Runtime model settings written by the UI settings panel (contains API key)
 /settings.local.json
+
+# TTS/ASR model files (downloaded by scripts/init_models.sh)
+/models/
