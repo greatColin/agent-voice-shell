@@ -139,6 +139,8 @@
         .hdr-btn.edit.active, .hdr-btn.edit:hover { border-color: transparent; background: var(--grad); color: #fff; }
         .hdr-btn.save { background: var(--grad); border-color: transparent; color: #fff; font-weight: 600; box-shadow: 0 4px 16px rgba(10, 132, 255, 0.4); }
         .hdr-btn.reset:hover { color: var(--danger); border-color: rgba(255, 69, 58, 0.4); }
+        .hdr-btn.mobile-reset { font-size: 11px; padding: 0 8px; }
+        .hdr-btn.mobile-reset:hover { border-color: rgba(100, 210, 255, 0.5); color: var(--blue); }
 
         .conn-badge {
             display: flex; align-items: center; gap: 7px;
@@ -875,6 +877,171 @@
         .voice-wave-pill.error { border-color: rgba(255, 69, 58, 0.5); }
         .voice-wave-canvas { display: block; width: 100%; height: 100%; }
 
+        /* ===== Mobile Voice Widget ===== */
+        .mobile-voice-widget {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 10px;
+            position: relative;
+        }
+        .mobile-voice-bubble {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--glass);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 6px 12px;
+            font-size: 12px;
+            color: var(--t1);
+            max-width: 90%;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            animation: bubble-in 0.2s ease-out;
+        }
+        @keyframes bubble-in { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+        .mobile-voice-bubble.listening { color: var(--blue); border-color: rgba(10,132,255,0.4); }
+        .mobile-voice-bubble.thinking { color: var(--t3); font-style: italic; }
+        .mobile-voice-bubble.error { color: var(--danger); border-color: rgba(255,69,58,0.4); }
+
+        /* Mic button */
+        .mobile-mic-btn {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            border: 2px solid var(--blue);
+            background: rgba(10,132,255,0.15);
+            color: var(--blue);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            flex-shrink: 0;
+        }
+        .mobile-mic-btn:hover { background: rgba(10,132,255,0.25); transform: scale(1.05); }
+        .mobile-mic-btn:active { transform: scale(0.95); }
+        .mobile-mic-btn.recording {
+            border-color: var(--danger);
+            background: rgba(255,69,58,0.15);
+            color: var(--danger);
+            animation: mic-pulse 1.2s ease-in-out infinite;
+        }
+        .mobile-mic-btn svg { width: 28px; height: 28px; }
+        @keyframes mic-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255,69,58,0.4); }
+            50% { box-shadow: 0 0 0 12px rgba(255,69,58,0); }
+        }
+
+        /* Ripple rings when recording */
+        .mobile-voice-ripple {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        .ripple-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,69,58,0.5);
+            transform: translate(-50%, -50%) scale(0);
+            animation: ripple-expand 1.8s ease-out infinite;
+        }
+        .ripple-ring:nth-child(2) { animation-delay: 0.6s; }
+        .ripple-ring:nth-child(3) { animation-delay: 1.2s; }
+        @keyframes ripple-expand {
+            0% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+            100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
+        }
+
+        /* Send / Cancel row */
+        .mobile-voice-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            animation: actions-in 0.2s ease-out;
+        }
+        @keyframes actions-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .mobile-voice-actions .action-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .mobile-voice-actions .action-btn:active { transform: scale(0.93); }
+        .mobile-voice-actions .send-btn {
+            background: var(--blue);
+            color: #fff;
+            box-shadow: 0 4px 14px rgba(10,132,255,0.4);
+        }
+        .mobile-voice-actions .send-btn:hover { background: #0a6cd6; }
+        .mobile-voice-actions .cancel-btn {
+            background: var(--glass);
+            color: var(--t2);
+            border: 1px solid var(--border);
+        }
+        .mobile-voice-actions .cancel-btn:hover { color: var(--danger); border-color: rgba(255,69,58,0.4); }
+        .mobile-voice-actions .action-btn svg { width: 20px; height: 20px; }
+
+        /* Hint text */
+        .mobile-voice-hint {
+            font-size: 10px;
+            color: var(--t3);
+            text-align: center;
+        }
+
+        /* ===== Mobile Spectrogram (enhanced) ===== */
+        .mobile-spec-widget {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            border-radius: 10px;
+        }
+        .mobile-spec-canvas { display: block; width: 100%; height: 100%; }
+        .mobile-spec-label {
+            position: absolute;
+            bottom: 6px;
+            font-size: 9px;
+            letter-spacing: 0.08em;
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        .mobile-spec-label.left { left: 8px; }
+        .mobile-spec-label.right { right: 8px; }
+        .mobile-spec-state {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 10px;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+        .mobile-spec-state.speaking { color: #ff375f; opacity: 0.8; }
+        .mobile-spec-state.listening { color: var(--blue); }
+        .mobile-spec-state.thinking { color: #bf5af2; }
+        .mobile-spec-state.idle { color: var(--t3); }
+
         /* ===== Sci-Fi Spectrogram (TTS) ===== */
         .spectrogram-widget {
             position: absolute; inset: 0;
@@ -999,6 +1166,10 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                     重置
                 </button>
+                <button class="hdr-btn mobile-reset" id="btn-mobile-reset" title="移动端布局">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                    移动端
+                </button>
             </div>
             <div class="conn-badge" id="conn-badge">
                 <span class="dot"></span>
@@ -1070,6 +1241,14 @@
             <div class="library-item" data-type="spectrogram">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="3" y2="12"/><line x1="6" y1="9" x2="6" y2="15"/><line x1="9" y1="6" x2="9" y2="18"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="15" y1="7" x2="15" y2="17"/><line x1="18" y1="10" x2="18" y2="14"/><line x1="21" y1="12" x2="21" y2="12"/></svg>
                 声纹
+            </div>
+            <div class="library-item" data-type="mobile-spectrogram">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+                移动声纹
+            </div>
+            <div class="library-item" data-type="mobile-voice">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                移动语音
             </div>
         </div>
     </div>
@@ -1778,6 +1957,54 @@ ${kfs}`;
                     if (!canvas) return;
                     startSpectrogram(canvas, status);
                 }
+            },
+            'mobile-spectrogram': {
+                title: '声纹',
+                defaultW: 320, defaultH: 180,
+                content: () => `
+                    <div class="mobile-spec-widget">
+                        <canvas class="mobile-spec-canvas" data-role="mspec-canvas"></canvas>
+                        <span class="mobile-spec-label left">AI VOICE</span>
+                        <span class="mobile-spec-state idle" data-role="mspec-state">standby</span>
+                    </div>
+                `,
+                onCreate: (widget) => {
+                    const canvas = widget.querySelector('[data-role="mspec-canvas"]');
+                    const stateEl = widget.querySelector('[data-role="mspec-state"]');
+                    if (!canvas) return;
+                    startMobileSpectrogram(canvas, stateEl);
+                }
+            },
+            'mobile-voice': {
+                title: '语音',
+                defaultW: 240, defaultH: 200,
+                content: () => `
+                    <div class="mobile-voice-widget" id="mobile-voice-root">
+                        <div class="mobile-voice-bubble" data-role="v-bubble" style="display:none"></div>
+                        <div style="position:relative; display:flex; flex-direction:column; align-items:center; gap:10px;">
+                            <div class="mobile-mic-btn" data-role="mic-btn" id="mobile-mic-btn">
+                                <div class="mobile-voice-ripple" data-role="ripple" style="display:none">
+                                    <div class="ripple-ring"></div>
+                                    <div class="ripple-ring"></div>
+                                    <div class="ripple-ring"></div>
+                                </div>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                            </div>
+                            <div class="mobile-voice-actions" data-role="v-actions" style="display:none">
+                                <button class="action-btn cancel-btn" data-role="v-cancel" title="取消">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                </button>
+                                <button class="action-btn send-btn" data-role="v-send" title="发送">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                                </button>
+                            </div>
+                            <div class="mobile-voice-hint" data-role="v-hint">点击开始说话</div>
+                        </div>
+                    </div>
+                `,
+                onCreate: (widget) => {
+                    initMobileVoiceWidget(widget);
+                }
             }
         };
 
@@ -2483,6 +2710,283 @@ ${kfs}`;
             _spectrograms.push({ cancel: () => rafId && cancelAnimationFrame(rafId) });
         }
 
+        // ===== Mobile Spectrogram: ripple (thinking) + spectrogram (speaking) + idle =====
+        const _mobileSpecs = [];
+        function startMobileSpectrogram(canvas, stateEl) {
+            const ctx = canvas.getContext('2d');
+            let rafId = null;
+            let t0 = performance.now();
+            const NUM_BARS = 24;
+
+            const setState = (s) => {
+                if (!stateEl) return;
+                stateEl.textContent = s;
+                stateEl.className = 'mobile-spec-state ' + (
+                    state.isSpeaking ? 'speaking' :
+                    state.isListening ? 'listening' :
+                    state.assistantActive ? 'thinking' : 'idle'
+                );
+            };
+
+            const draw = () => {
+                const t = (performance.now() - t0) / 1000;
+                const speaking = !!state.isSpeaking;
+                const listening = !!state.isListening;
+                const thinking = !speaking && !listening && !!state.assistantActive;
+                const idle = !speaking && !listening && !state.assistantActive;
+
+                const cssW = canvas.clientWidth || 320;
+                const cssH = canvas.clientHeight || 180;
+                const dpr = window.devicePixelRatio || 1;
+                if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+                    canvas.width = Math.round(cssW * dpr);
+                    canvas.height = Math.round(cssH * dpr);
+                }
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.clearRect(0, 0, cssW, cssH);
+
+                const cx = cssW / 2, cy = cssH / 2;
+
+                if (speaking) {
+                    // ---- TTS spectrogram (pink/violet bars) ----
+                    const bg = ctx.createLinearGradient(0, 0, 0, cssH);
+                    bg.addColorStop(0, 'rgba(10,8,32,0.97)');
+                    bg.addColorStop(1, 'rgba(20,12,40,0.97)');
+                    ctx.fillStyle = bg;
+                    ctx.fillRect(0, 0, cssW, cssH);
+
+                    // Grid
+                    ctx.strokeStyle = 'rgba(94,92,230,0.18)';
+                    ctx.lineWidth = 0.5;
+                    for (let gx = 0; gx <= cssW; gx += cssW / 6) {
+                        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, cssH); ctx.stroke();
+                    }
+                    for (let gy = 0; gy <= cssH; gy += cssH / 4) {
+                        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(cssW, gy); ctx.stroke();
+                    }
+
+                    const totalW = cssW - 16, barW = totalW / NUM_BARS, gap = 2;
+                    const maxH = cssH * 0.65, barCy = cssH * 0.55;
+                    for (let i = 0; i < NUM_BARS; i++) {
+                        const nx = i / (NUM_BARS - 1);
+                        const formant = Math.exp(-Math.pow((nx - 0.45) * 2.6, 2));
+                        const env = 0.6 + 0.4 * Math.sin(t * 1.7 + nx * 6.2);
+                        const a = (Math.sin(t * 2.2 + nx * 5) * 0.45
+                                 + Math.sin(t * 2.2 * 2.3 + nx) * 0.3
+                                 + Math.sin(t * 2.2 * 4.7 + nx * 2) * 0.2);
+                        const barH = Math.max(0.08, Math.min(1, ((a + 1) * 0.5 * env) * (0.35 + 0.65 * formant))) * maxH;
+                        const x = 8 + i * barW, y = barCy - barH / 2, w = barW - gap;
+                        const grad = ctx.createLinearGradient(0, y + barH, 0, y);
+                        grad.addColorStop(0, '#ff375f');
+                        grad.addColorStop(0.45, '#5e5ce6');
+                        grad.addColorStop(0.8, '#0a84ff');
+                        grad.addColorStop(1, '#64d2ff');
+                        ctx.fillStyle = grad;
+                        ctx.beginPath();
+                        ctx.roundRect(x, y, w, barH, 2);
+                        ctx.fill();
+                    }
+                    // Halo
+                    const haloX = cssW * 0.5 + Math.sin(t * 0.7) * (cssW * 0.15);
+                    const halo = ctx.createRadialGradient(haloX, barCy, 0, haloX, barCy, cssW * 0.3);
+                    halo.addColorStop(0, 'rgba(255,55,95,0.3)');
+                    halo.addColorStop(1, 'rgba(94,92,230,0)');
+                    ctx.fillStyle = halo;
+                    ctx.fillRect(0, 0, cssW, cssH);
+                    // Scanline
+                    const phase = ((t % 4) / 4) * (cssW - 4) + 2;
+                    const sgrad = ctx.createLinearGradient(phase - 10, 0, phase + 10, 0);
+                    sgrad.addColorStop(0, 'rgba(100,210,255,0)');
+                    sgrad.addColorStop(0.5, 'rgba(100,210,255,0.65)');
+                    sgrad.addColorStop(1, 'rgba(100,210,255,0)');
+                    ctx.fillStyle = sgrad;
+                    ctx.fillRect(phase - 10, 0, 20, cssH);
+
+                } else if (thinking) {
+                    // ---- Ripple / water wave effect (thinking) ----
+                    const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, cssW * 0.7);
+                    bg.addColorStop(0, 'rgba(50,30,80,0.97)');
+                    bg.addColorStop(1, 'rgba(10,8,32,0.97)');
+                    ctx.fillStyle = bg;
+                    ctx.fillRect(0, 0, cssW, cssH);
+
+                    // 4 expanding ripple rings
+                    for (let r = 0; r < 4; r++) {
+                        const phase = ((t * 0.7 + r * 0.5) % 2) / 2;
+                        const radius = phase * cssW * 0.55;
+                        const alpha = (1 - phase) * 0.5;
+                        ctx.strokeStyle = `rgba(191,90,242,${alpha})`;
+                        ctx.lineWidth = 1.5;
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    // Central glow
+                    const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, cssW * 0.2);
+                    cg.addColorStop(0, 'rgba(191,90,242,0.3)');
+                    cg.addColorStop(1, 'rgba(191,90,242,0)');
+                    ctx.fillStyle = cg;
+                    ctx.fillRect(0, 0, cssW, cssH);
+                    // Center dot
+                    ctx.fillStyle = 'rgba(191,90,242,0.7)';
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+                    ctx.fill();
+
+                } else if (listening) {
+                    // ---- Listening: blue ripple ----
+                    const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, cssW * 0.7);
+                    bg.addColorStop(0, 'rgba(10,50,80,0.97)');
+                    bg.addColorStop(1, 'rgba(10,8,32,0.97)');
+                    ctx.fillStyle = bg;
+                    ctx.fillRect(0, 0, cssW, cssH);
+
+                    for (let r = 0; r < 4; r++) {
+                        const phase = ((t * 0.9 + r * 0.5) % 2) / 2;
+                        const radius = phase * cssW * 0.5;
+                        const alpha = (1 - phase) * 0.45;
+                        ctx.strokeStyle = `rgba(10,132,255,${alpha})`;
+                        ctx.lineWidth = 1.5;
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, cssW * 0.18);
+                    cg.addColorStop(0, 'rgba(10,132,255,0.35)');
+                    cg.addColorStop(1, 'rgba(10,132,255,0)');
+                    ctx.fillStyle = cg;
+                    ctx.fillRect(0, 0, cssW, cssH);
+
+                } else {
+                    // ---- Idle: gentle breathing ----
+                    const breathe = 0.5 + 0.5 * Math.sin(t * 1.2);
+                    const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, cssW * 0.6);
+                    bg.addColorStop(0, `rgba(${Math.round(20+breathe*15)},${Math.round(8+breathe*10)},${Math.round(50+breathe*20)},0.97)`);
+                    bg.addColorStop(1, 'rgba(10,8,32,0.97)');
+                    ctx.fillStyle = bg;
+                    ctx.fillRect(0, 0, cssW, cssH);
+
+                    // Subtle grid
+                    ctx.strokeStyle = 'rgba(94,92,230,0.12)';
+                    ctx.lineWidth = 0.5;
+                    for (let gx = 0; gx <= cssW; gx += cssW / 6) {
+                        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, cssH); ctx.stroke();
+                    }
+                    for (let gy = 0; gy <= cssH; gy += cssH / 4) {
+                        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(cssW, gy); ctx.stroke();
+                    }
+                    // Slow pulse circle
+                    const pulseR = cssW * 0.15 + breathe * cssW * 0.08;
+                    const pg = ctx.createRadialGradient(cx, cy, 0, cx, cy, pulseR);
+                    pg.addColorStop(0, `rgba(100,210,255,${0.15+breathe*0.1})`);
+                    pg.addColorStop(1, 'rgba(100,210,255,0)');
+                    ctx.fillStyle = pg;
+                    ctx.fillRect(0, 0, cssW, cssH);
+                }
+
+                setState('');
+                rafId = requestAnimationFrame(draw);
+            };
+            rafId = requestAnimationFrame(draw);
+            _mobileSpecs.push({ cancel: () => rafId && cancelAnimationFrame(rafId) });
+        }
+
+        // ===== Mobile Voice Widget =====
+        function initMobileVoiceWidget(widget) {
+            const micBtn = widget.querySelector('[data-role="mic-btn"]');
+            const ripple = widget.querySelector('[data-role="ripple"]');
+            const actions = widget.querySelector('[data-role="v-actions"]');
+            const hint = widget.querySelector('[data-role="v-hint"]');
+            const bubble = widget.querySelector('[data-role="v-bubble"]');
+            const sendBtn = widget.querySelector('[data-role="v-send"]');
+            const cancelBtn = widget.querySelector('[data-role="v-cancel"]');
+
+            let recordedText = '';
+            let _recording = false;
+            let _waitingResponse = false;
+
+            function setListening(on) {
+                _recording = on;
+                if (on) _waitingResponse = false;
+                micBtn.classList.toggle('recording', on);
+                ripple.style.display = on ? 'block' : 'none';
+                hint.style.display = on ? 'none' : 'block';
+                hint.textContent = on ? '点击结束' : '点击开始说话';
+                actions.style.display = 'none';
+                bubble.style.display = 'none';
+                bubble.textContent = '';
+                if (on) {
+                    if (state.isListening) stopListening();
+                    startListening();
+                } else {
+                    stopListening();
+                }
+            }
+
+            function showResult(text) {
+                recordedText = text;
+                bubble.textContent = text || '(未识别到内容)';
+                bubble.className = 'mobile-voice-bubble' + (text ? ' listening' : ' error');
+                bubble.style.display = 'block';
+                actions.style.display = 'flex';
+                hint.style.display = 'none';
+            }
+
+            micBtn.addEventListener('click', () => {
+                if (!_recording) {
+                    setListening(true);
+                } else {
+                    setListening(false);
+                    const text = (state.voiceBase || '') + (state.voiceFinals || '');
+                    showResult(text.trim());
+                }
+            });
+
+            sendBtn.addEventListener('click', () => {
+                if (!recordedText) return;
+                const text = recordedText;
+                actions.style.display = 'none';
+                bubble.style.display = 'none';
+                hint.style.display = 'block';
+                hint.textContent = '等待回复...';
+                recordedText = '';
+                _waitingResponse = true;
+                // Send via WebSocket
+                if (state.ws?.readyState === WebSocket.OPEN) {
+                    state.ws.send(JSON.stringify({ type: 'user_input', text }));
+                }
+            });
+
+            cancelBtn.addEventListener('click', () => {
+                actions.style.display = 'none';
+                bubble.style.display = 'none';
+                hint.style.display = 'block';
+                hint.textContent = '点击开始说话';
+                recordedText = '';
+                _waitingResponse = false;
+                state.voiceBase = '';
+                state.voiceFinals = '';
+            });
+
+            // When thinking starts (assistantActive becomes true)
+            const stopThinkingObserver = setInterval(() => {
+                if (state.assistantActive && !state.isListening && !state.isSpeaking && _waitingResponse) {
+                    bubble.textContent = '思考中...';
+                    bubble.className = 'mobile-voice-bubble thinking';
+                    bubble.style.display = 'block';
+                    hint.style.display = 'none';
+                } else if (!state.assistantActive && _waitingResponse) {
+                    // Generation done, stop showing thinking, wait for speaking to start
+                    _waitingResponse = false;
+                    bubble.style.display = 'none';
+                    hint.style.display = 'block';
+                    hint.textContent = '点击开始说话';
+                }
+            }, 200);
+
+            widget._stopThinkingObserver = () => clearInterval(stopThinkingObserver);
+        }
+
         function startListening() {
             if (state.isListening) return;
             if (!state.recognition) state.recognition = initBrowserAsr();
@@ -2697,6 +3201,28 @@ ${kfs}`;
             });
         }
 
+        function getMobileLayout() {
+            const w = canvas.clientWidth;
+            const h = canvas.clientHeight;
+            // mobile: full-width spectrogram at top, large voice at bottom
+            const specW = Math.min(360, w - 20);
+            const specH = Math.round(specW * 0.55);
+            const specX = Math.round((w - specW) / 2);
+            const voiceW = Math.min(260, w - 20);
+            const voiceH = 200;
+            const voiceX = Math.round((w - voiceW) / 2);
+            return [
+                { type: 'mobile-spectrogram', x: specX, y: 8, w: specW, h: specH },
+                { type: 'mobile-voice', x: voiceX, y: h - voiceH - 8, w: voiceW, h: voiceH }
+            ];
+        }
+
+        function applyMobileLayout() {
+            getMobileLayout().forEach(item => {
+                createWidget(item.type, item.x, item.y, item.w, item.h);
+            });
+        }
+
         // Init
         function init() {
             if (!loadLayout()) {
@@ -2721,6 +3247,20 @@ ${kfs}`;
                     });
                 }
             });
+
+            const btnMobileReset = $('btn-mobile-reset');
+            if (btnMobileReset) {
+                btnMobileReset.addEventListener('click', () => {
+                    if (confirm('切换到移动端布局？')) {
+                        localStorage.removeItem('voice-shell-layout');
+                        document.querySelectorAll('.widget').forEach(w => w.remove());
+                        requestAnimationFrame(() => {
+                            applyMobileLayout();
+                            saveLayout();
+                        });
+                    }
+                });
+            }
 
             // Settings modal
             const settingsOverlay = $('settings-overlay');
