@@ -336,10 +336,18 @@
         /* Input / Voice / Avatar widgets: hide header unless editing */
         .widget[data-type="input"] .widget-header,
         .widget[data-type="voice"] .widget-header,
-        .widget[data-type="avatar"] .widget-header { display: none; }
+        .widget[data-type="avatar"] .widget-header,
+        .widget[data-type="spectrogram"] .widget-header { display: none; }
         .widget.editing .widget-header { display: flex !important; }
         .widget[data-type="input"] { padding: 10px 16px; }
         .widget[data-type="voice"] { padding: 10px; }
+        /* Spectrogram widget: full-bleed canvas, no chrome — header is hidden,
+           padding collapsed to 0, content fills the whole box so the canvas
+           stays exactly defaultW × defaultH. */
+        .widget[data-type="spectrogram"] { padding: 0; }
+        .widget[data-type="spectrogram"] .widget-content { flex: 1; min-height: 0; overflow: hidden; }
+        /* Spectrogram widget: fixed canvas area, no user resize handle */
+        .widget[data-type="spectrogram"]:not(.editing):not(.dragging) .resize-handle { display: none; }
 
         /* ===== Avatar ===== */
         .widget[data-type="avatar"]:not(.editing):not(.dragging) {
@@ -855,20 +863,48 @@
             border-color: rgba(10, 132, 255, 0.36);
             box-shadow: 0 4px 18px rgba(10, 132, 255, 0.18), inset 0 1px 0 rgba(255,255,255,0.08);
         }
-        /* Fixed width: the canvas attribute width is rewritten every frame (cssW * dpr),
+/* Fixed width: the canvas attribute width is rewritten every frame (cssW * dpr),
            which feeds back into the percentage CSS width and makes an auto-width
            pill grow indefinitely under fractional zoom. */
         #voice-wave-pill-input { width: 110px; }
         .voice-wave-pill.active { display: flex; animation: voice-wave-in 0.22s ease-out; }
         @keyframes voice-wave-in {
             from { opacity: 0; transform: scaleX(0.6); }
-            to { opacity: 1; transform: scaleX(1); }
+            to   { opacity: 1; transform: scaleX(1); }
         }
-        .voice-wave-pill.error {
-            border-color: rgba(255, 69, 58, 0.4);
-            background: rgba(255, 69, 58, 0.12);
-        }
+        .voice-wave-pill.error { border-color: rgba(255, 69, 58, 0.5); }
         .voice-wave-canvas { display: block; width: 100%; height: 100%; }
+
+        /* ===== Sci-Fi Spectrogram (TTS) ===== */
+        .spectrogram-widget {
+            position: absolute; inset: 0;
+            width: 100%; height: 100%;
+            overflow: hidden;
+        }
+        .spectrogram-canvas { display: block; width: 100%; height: 100%; }
+        .spectrogram-label {
+            position: absolute; top: 6px;
+            font-size: 9px; letter-spacing: 1.2px; font-weight: 600;
+            color: rgba(100, 210, 255, 0.55);
+            font-family: 'SF Mono', 'Menlo', monospace;
+            pointer-events: none;
+        }
+        .spectrogram-label.left { left: 10px; }
+        .spectrogram-label.right { right: 10px; color: rgba(255, 55, 95, 0.55); }
+        .spectrogram-status {
+            position: absolute; bottom: 6px; left: 10px;
+            font-size: 9px; letter-spacing: 1.2px;
+            color: rgba(94, 92, 230, 0.6);
+            font-family: 'SF Mono', 'Menlo', monospace;
+            pointer-events: none;
+        }
+        .spectrogram-status.live { color: rgba(255, 55, 95, 0.85); animation: spectrogram-blink 1.4s ease-in-out infinite; }
+        @keyframes spectrogram-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+        /* Spectrogram widget: full-bleed canvas, no chrome — header is hidden,
+           padding collapsed to 0, content fills the whole box so the canvas
+           stays exactly defaultW × defaultH. */
+        .widget[data-type="spectrogram"] { padding: 0; }
+        .widget[data-type="spectrogram"] .widget-content { flex: 1; min-height: 0; overflow: hidden; }
 
         /* ===== Empty State ===== */
         .empty-state {
@@ -1029,6 +1065,10 @@
             <div class="library-item" data-type="voice">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                 语音输入
+            </div>
+            <div class="library-item" data-type="spectrogram">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="3" y2="12"/><line x1="6" y1="9" x2="6" y2="15"/><line x1="9" y1="6" x2="9" y2="18"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="15" y1="7" x2="15" y2="17"/><line x1="18" y1="10" x2="18" y2="14"/><line x1="21" y1="12" x2="21" y2="12"/></svg>
+                声纹
             </div>
         </div>
     </div>
@@ -1710,6 +1750,24 @@ ${kfs}`;
                         else startListening();
                     });
                 }
+            },
+            spectrogram: {
+                title: '声纹',
+                defaultW: 280, defaultH: 140,
+                content: () => `
+                    <div class="spectrogram-widget">
+                        <canvas class="spectrogram-canvas" data-role="spec-canvas" width="280" height="140"></canvas>
+                        <span class="spectrogram-label left">FREQ</span>
+                        <span class="spectrogram-label right">AI VOICE</span>
+                        <span class="spectrogram-status" data-role="spec-status">STANDBY</span>
+                    </div>
+                `,
+                onCreate: (widget) => {
+                    const canvas = widget.querySelector('[data-role="spec-canvas"]');
+                    const status = widget.querySelector('[data-role="spec-status"]');
+                    if (!canvas) return;
+                    startSpectrogram(canvas, status);
+                }
             }
         };
 
@@ -2193,6 +2251,168 @@ ${kfs}`;
                 try { voiceAudio.audioCtx?.close?.(); } catch (e) {}
                 voiceAudio = null;
             }
+        }
+
+        // ===== Sci-Fi Spectrogram (TTS) =====
+        // SpeechSynthesis has no analysable stream, so synthesize a virtual
+        // spectrum from per-frame time + utterance text length. Idle bars
+        // breathe slowly; speaking bars reflect a layered sine mix with a
+        // left-to-right scanline and central pink/violet halo.
+        const _spectrograms = [];
+        function startSpectrogram(canvas, statusEl) {
+            const ctx = canvas.getContext('2d');
+            let rafId = null;
+            let t0 = performance.now();
+            const NUM_BARS = 32;
+            const setStatus = (txt, live) => {
+                if (!statusEl) return;
+                statusEl.textContent = txt;
+                statusEl.classList.toggle('live', !!live);
+            };
+            const draw = () => {
+                const t = (performance.now() - t0) / 1000;
+                const speaking = !!state.isSpeaking;
+                const cssW = canvas.clientWidth || 280;
+                const cssH = canvas.clientHeight || 140;
+                const dpr = window.devicePixelRatio || 1;
+                if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+                    canvas.width = Math.round(cssW * dpr);
+                    canvas.height = Math.round(cssH * dpr);
+                }
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+                // Background gradient (deep space)
+                const bg = ctx.createLinearGradient(0, 0, 0, cssH);
+                bg.addColorStop(0, 'rgba(10, 8, 32, 0.95)');
+                bg.addColorStop(1, 'rgba(20, 12, 40, 0.95)');
+                ctx.fillStyle = bg;
+                ctx.fillRect(0, 0, cssW, cssH);
+
+                // Grid overlay (HUD feel)
+                ctx.strokeStyle = 'rgba(94, 92, 230, 0.18)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                for (let gx = 0; gx <= cssW; gx += cssW / 8) {
+                    ctx.moveTo(gx + 0.5, 0); ctx.lineTo(gx + 0.5, cssH);
+                }
+                for (let gy = 0; gy <= cssH; gy += cssH / 5) {
+                    ctx.moveTo(0, gy + 0.5); ctx.lineTo(cssW, gy + 0.5);
+                }
+                ctx.stroke();
+
+                // Baseline glow
+                const baseGrad = ctx.createLinearGradient(0, cssH * 0.3, 0, cssH);
+                baseGrad.addColorStop(0, 'rgba(10, 132, 255, 0)');
+                baseGrad.addColorStop(1, 'rgba(94, 92, 230, 0.25)');
+                ctx.fillStyle = baseGrad;
+                ctx.fillRect(0, cssH * 0.3, cssW, cssH * 0.7);
+
+                // Compute bar levels
+                const totalW = cssW - 16;
+                const barW = totalW / NUM_BARS;
+                const gap = 2;
+                const maxH = cssH * 0.72;
+                const cy = cssH * 0.55;
+
+                // Multi-octave envelope: each bar gets a base frequency
+                // (left = high freq / bright color, right = low freq / violet)
+                const bars = new Array(NUM_BARS);
+                for (let i = 0; i < NUM_BARS; i++) {
+                    const nx = i / (NUM_BARS - 1); // 0..1 across bars
+                    // Speech-like formant envelope: middle bands dominant,
+                    // tapering toward the edges — makes the visual feel like
+                    // an actual voice spectrum rather than random noise.
+                    const formant = Math.exp(-Math.pow((nx - 0.45) * 2.6, 2));
+                    if (speaking) {
+                        // Three layered sines + slow temporal variation
+                        const phase = t * 2.2 + nx * 5;
+                        const env = 0.6 + 0.4 * Math.sin(t * 1.7 + nx * 6.2);
+                        const a = (Math.sin(phase) * 0.45
+                                 + Math.sin(phase * 2.3 + nx) * 0.3
+                                 + Math.sin(phase * 4.7 + nx * 2) * 0.2);
+                        bars[i] = Math.max(0.08, Math.min(1, ((a + 1) * 0.5 * env) * (0.35 + 0.65 * formant)));
+                    } else {
+                        // Idle: subtle low-amplitude breathing
+                        bars[i] = 0.12 + 0.05 * (0.5 + 0.5 * Math.sin(t * 1.4 + nx * 9));
+                    }
+                }
+
+                // Draw bars (bottom-up, with vertical gradient pink→violet→blue→cyan)
+                for (let i = 0; i < NUM_BARS; i++) {
+                    const h = bars[i] * maxH;
+                    const x = 8 + i * barW;
+                    const y = cy - h / 2;
+                    const w = barW - gap;
+                    const grad = ctx.createLinearGradient(0, y + h, 0, y);
+                    if (speaking) {
+                        grad.addColorStop(0.0, '#ff375f');
+                        grad.addColorStop(0.45, '#5e5ce6');
+                        grad.addColorStop(0.8, '#0a84ff');
+                        grad.addColorStop(1.0, '#64d2ff');
+                    } else {
+                        grad.addColorStop(0.0, 'rgba(94, 92, 230, 0.4)');
+                        grad.addColorStop(1.0, 'rgba(100, 210, 255, 0.55)');
+                    }
+                    ctx.fillStyle = grad;
+                    const r = Math.min(w / 2, 2);
+                    ctx.beginPath();
+                    ctx.moveTo(x + r, y);
+                    ctx.lineTo(x + w - r, y);
+                    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+                    ctx.lineTo(x + w, y + h - r);
+                    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+                    ctx.lineTo(x + r, y + h);
+                    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+                    ctx.lineTo(x, y + r);
+                    ctx.quadraticCurveTo(x, y, x + r, y);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    // Glow cap on the top edge for speaking state
+                    if (speaking && h > 8) {
+                        ctx.shadowColor = '#ff375f';
+                        ctx.shadowBlur = 8;
+                        ctx.fillStyle = 'rgba(255, 55, 95, 0.0)';
+                        ctx.fillRect(x, y - 1, w, 1);
+                        ctx.shadowBlur = 0;
+                    }
+                }
+
+                // Central halo when speaking
+                if (speaking) {
+                    const haloX = cssW * 0.5 + Math.sin(t * 0.7) * (cssW * 0.18);
+                    const halo = ctx.createRadialGradient(haloX, cy, 0, haloX, cy, cssW * 0.35);
+                    halo.addColorStop(0, 'rgba(255, 55, 95, 0.35)');
+                    halo.addColorStop(0.4, 'rgba(94, 92, 230, 0.18)');
+                    halo.addColorStop(1, 'rgba(94, 92, 230, 0)');
+                    ctx.fillStyle = halo;
+                    ctx.fillRect(0, 0, cssW, cssH);
+                }
+
+                // Scanline (only when speaking): a vertical light bar that
+                // sweeps left-to-right every 4s and leaves a faint trail.
+                if (speaking) {
+                    const cycle = 4.0;
+                    const phase = (t % cycle) / cycle;
+                    const sx = phase * (cssW - 4) + 2;
+                    const sgrad = ctx.createLinearGradient(sx - 12, 0, sx + 12, 0);
+                    sgrad.addColorStop(0, 'rgba(100, 210, 255, 0)');
+                    sgrad.addColorStop(0.5, 'rgba(100, 210, 255, 0.7)');
+                    sgrad.addColorStop(1, 'rgba(100, 210, 255, 0)');
+                    ctx.fillStyle = sgrad;
+                    ctx.fillRect(sx - 12, 0, 24, cssH);
+                }
+
+                // Outer border glow when speaking
+                ctx.strokeStyle = speaking ? 'rgba(255, 55, 95, 0.4)' : 'rgba(94, 92, 230, 0.25)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(0.5, 0.5, cssW - 1, cssH - 1);
+
+                setStatus(speaking ? '● LIVE' : 'STANDBY', speaking);
+                rafId = requestAnimationFrame(draw);
+            };
+            rafId = requestAnimationFrame(draw);
+            _spectrograms.push({ cancel: () => rafId && cancelAnimationFrame(rafId) });
         }
 
         function startListening() {
