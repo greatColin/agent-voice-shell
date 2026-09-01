@@ -1,119 +1,156 @@
 # Agent Voice Shell
 
-> Pseudo-full-duplex text/voice shell that wraps any agent CLI.
+> Pseudo-full-duplex voice shell with local LLM backend.
 
-A Python shell that gives any agent CLI a **pseudo-full-duplex** interface. Inspired by GPT-4o Realtime style interruption handling (3-step cancel + truncate), Moshi dual-stream semantics, and Doubao Seeduplex full-duplex UX. The voice pipeline is **agent-agnostic** by design — v1 wires up [Pi](https://github.com/earendil-works/pi), but the adapter pattern keeps the door open for OpenCode, Hermes, or any future runtime.
-
----
-
-## Status
-
-| Version | Description                                | Status          |
-| ------- | ------------------------------------------ | --------------- |
-| V1      | Text-only pseudo-full-duplex over WebSocket | ✅ implemented  |
-| V2      | + 语音输入 (browser → ASR → LLM)            | 🚧 in design   |
-| V3      | + TTS + 回声协调                             | 🚧 in design   |
-| V4      | + 数字人 + 状态看板                          | 🚧 planned      |
+一个运行在浏览器中的伪全双工语音 Agent Shell，基于本地 pi CLI 后端，支持语音输入、离线情感 TTS、数字人动画和自由布局。
 
 ---
 
-## What It Is
+## 功能状态
 
-Agent Voice Shell sits between **a user (in a browser)** and **an agent CLI (Pi for v1)**. It:
-
-- Streams agent output to a web UI over WebSocket
-- Lets the user interrupt at any time — input becomes "barge-in"
-- Hides the specific agent runtime behind an `AgentClient` adapter
-- Uses a single session message stack; one session, many turns
-- Provides a CLI mode for development without a browser
-
-The full design and acceptance criteria are pinned in [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) (what) and [`docs/PLAN.md`](docs/PLAN.md) (how).
+| 阶段 | 描述 | 状态 |
+|------|------|------|
+| V1 | 文字交互（WebSocket + 中断） | ✅ 已实现 |
+| V2 | 语音输入（Browser ASR） | ✅ 已实现 |
+| V3 | 本地 TTS（sherpa-onnx 情感语音） | ✅ 已实现 |
+| V4 | 数字人 + 状态看板 + 自由布局 | ✅ 已实现 |
+| V5 | 移动端布局 + 声纹动画 | ✅ 已实现 |
 
 ---
 
-## Quick Start
+## 快速启动
 
 ```bash
-# 1. Install
+# 1. 安装依赖
 pip install -r requirements.txt
 
-# 2. CLI self-test (no browser needed)
-python -m app.cli
+# 2. 首次运行：下载 TTS 模型（可选）
+scripts/init_models.sh              # 默认下载 fanchen 情感 TTS（187 情绪说话人）
+scripts/init_models.sh --kokoro   # 追加 Kokoro 中英双语模型
+scripts/init_models.sh --all      # 两个模型都下
 
-# 3. Or start the web server
+# 3. 启动服务
 python -m app.main
-# then open http://localhost:8000
+# 浏览器打开 http://localhost:8000
 ```
 
-Requires Python 3.10+.
+**TTS 模型说明：**
+- `fanchen`（默认）：VITS 情感模型，187 情绪说话人，RTF~0.4（实时 2.5 倍），16kHz
+- `kokoro`（可选）：Kokoro int8 多语言模型，103 说话人，中英双语，RTF~2，24kHz
 
 ---
 
-## Architecture (V1)
+## 界面布局
+
+右上角按钮：
+- **编辑** — 拖拽调整 widget 位置和大小
+- **保存** — 保存当前布局
+- **重置** — 恢复桌面端默认布局
+- **移动端** — 切换到移动端专用布局
+
+### 桌面端默认布局
+- 左上：语音引擎（ASR/TTS provider 选择）
+- 右上：状态看板（连接状态、模型信息）
+- 中央：数字人 sprite 动画
+- 中下：对话气泡
+- 底部：文字输入框 + 麦克风按钮 + 语音波形
+
+### 移动端默认布局
+- 顶部：移动声纹（thinking 涟漪 / speaking 频谱 / idle 呼吸）
+- 底部：64px 大麦克风按钮，录音结束后出现发送/取消按钮
+
+---
+
+## 架构
 
 ```
-   ┌────────── Browser (single HTML) ──────────┐
-   │   [Input] [Start] [Interrupt] [Streaming] │
-   └──────────────┬────────────────────────────┘
-                   │ WebSocket
-   ┌──────────────▼────────────────────────────┐
-   │          FastAPI backend (Python)         │
-   │                                            │
-   │   state machine (IDLE ⇄ GENERATING)      │
-   │        ↓                                   │
-   │   interruption handler  (V1–V4 共用)      │
-   │        ↓                                   │
-   │   session manager → event router          │
-   │        ↓                                   │
-   │   agent adapter (BigModel GLM-4-Flash)    │
-   └──────────────┬────────────────────────────┘
-                   │ HTTP stream (OpenAI compatible)
-                   ▼
-              [BigModel API — GLM-4-Flash]
+┌─────────── 浏览器（单文件 HTML）─────────────┐
+│  WebSocket 文字流 + 语音波形 + 声纹动画      │
+│  数字人 sprite（8×9 spritesheet）            │
+└──────────────┬──────────────────────────────┘
+               │ WebSocket
+┌──────────────▼──────────────────────────────┐
+│  FastAPI 后端（Python）                     │
+│                                             │
+│  state machine（IDLE ⇄ GENERATING）          │
+│       ↓                                     │
+│  interruption handler（打断 → 截断上下文）    │
+│       ↓                                     │
+│  session manager → event router             │
+│       ↓                                     │
+│  agent adapter → pi subprocess（本地 CLI）  │
+└──────────────┬──────────────────────────────┘
+               │ HTTP（OpenAI 兼容格式）
+               ▼
+         [pi CLI — 本地模型]
+```
+
+**TTS 路径（sherpa-onnx）：**
+```
+后端 TTS 端点（/api/tts/speak）
+    → sherpa-onnx OfflineTts（vits-fanchen / kokoro）
+    → WAV bytes
+    → 前端 HTMLAudioElement 播放
 ```
 
 ---
 
-## How Pseudo-Full-Duplex Works
+## 伪全双工原理
 
-Unlike true full-duplex (which requires server-side cancellation support), this implementation achieves interruptible output through client-side flow control:
+与真正的全双工不同（本项目无需服务端取消支持），通过客户端流控实现可打断输出：
 
-**Mechanism:**
-1. User sends interrupt → sets `cancel_requested = True`
-2. Next stream iteration detects flag → breaks (stops receiving)
-3. New request starts fresh → discarded partial output not included in next context
-
-**Trade-offs:**
-| | Pseudo-Full-Duplex | True Full-Duplex |
-|---|---|---|
-| User can interrupt immediately | ✅ | ✅ |
-| Real-time streaming output | ✅ | ✅ |
-| Next round continues normally | ✅ | ✅ |
-| Server resource efficiency | Slight waste | ✅ Optimal |
-| Implementation complexity | Low | High (requires server support) |
-
-**Result:** User experience is nearly identical to true full-duplex, with minimal server-side overhead. Works with any LLM provider via OpenAI-compatible API.
+1. 用户打断 → `cancel_event.set()`
+2. 流循环检测到标志 → `break`（停止接收）
+3. 新请求开始 → 截断的输出不进入下一轮上下文
 
 ---
 
-## Development
+## TTS 配置（设置面板）
 
-For full node-by-node development tasks and acceptance criteria, see [`docs/PLAN.md`](docs/PLAN.md) §5.
+支持三种 TTS provider，切换实时生效：
 
-| Command                          | What it does                       |
-| -------------------------------- | ---------------------------------- |
-| `pip install -r requirements.txt` | install deps                       |
-| `python -m app.cli`              | CLI self-test (no browser)         |
-| `python -m app.main`             | start FastAPI server               |
-| `pytest tests/`                  | run unit + integration tests       |
+| Provider | 说明 | 依赖 |
+|----------|------|------|
+| Browser TTS | 系统语音合成，无需配置 | 浏览器支持 |
+| 本地（sherpa-onnx）| 离线情感 TTS，187 种情绪音色 | `models/` 下 fanchen VITS |
+| 自定义 API | OpenAI 兼容接口 | 需配置 baseURL + API Key |
 
 ---
 
-## Why This Project Exists
+## 开发
 
-Most agent CLIs are turn-based: ask, wait, answer. Real conversation is **half-duplex**, with awkward pauses. Full-duplex voice agents (GPT-4o Realtime, Moshi, Doubao Seeduplex) have shown how natural it feels — but they are large systems, locked to specific runtimes, and not open in the way that lets you own your stack.
+```bash
+# 安装
+pip install -r requirements.txt
 
-Agent Voice Shell is a pragmatic middle ground: **pseudo-full-duplex** built on top of open CLIs, with an adapter layer that doesn't tie you to one vendor.
+# 单元测试
+pytest tests/
+
+# 启动服务
+python -m app.main
+
+# TTS 模型初始化脚本
+scripts/init_models.sh --help
+```
+
+---
+
+## 目录结构
+
+```
+app/
+  agent/       pi_adapter.py  — pi subprocess 封装 + _ThinkFilter
+  controller/  state_machine.py / interruption.py — 状态机 + 打断
+  events/      router.py / events.py — 事件流
+  session/     session.py — 消息栈管理
+  tts/         service.py — sherpa-onnx 多引擎 TTS 服务
+  web/         ws_endpoint.py / protocol.py — WebSocket 端点
+               static/index.html — 全量前端单文件
+scripts/
+  init_models.sh   — TTS 模型下载（断点续传）
+  start.sh          — 服务启动脚本
+models/             — TTS 模型目录（gitignore，运行时下载）
+```
 
 ---
 
