@@ -1,13 +1,26 @@
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, JSONResponse, Response
+from contextlib import asynccontextmanager
 import json
 import os
+import threading
 
 from app.web.ws_endpoint import ws_endpoint
 from app.tts.service import service as tts_service, TtsUnavailable
+from app.asr.service import service as asr_service, AsrUnavailable
 
-app = FastAPI()
+# 预加载 ASR 模型（后台线程，不阻塞启动）
+def _preload_asr():
+    t = threading.Thread(target=asr_service.load, daemon=True)
+    t.start()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _preload_asr()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 AVATARS_DIR = "app/web/static/avatars"
 SETTING_KEYS = ("baseUrl", "apiKey", "model")
@@ -102,7 +115,6 @@ async def save_settings(request: Request):
 
 # ---- 本地 TTS (sherpa-onnx) ---------------------------------------------
 
-
 @app.get("/api/tts/status")
 async def tts_status():
     return tts_service.status()
@@ -119,6 +131,29 @@ async def tts_speak(text: str = "", voice: str = "", speed: float = 1.0):
     except Exception as e:
         return JSONResponse({"error": f"tts failed: {e}"}, status_code=500)
     return Response(content=wav, media_type="audio/wav")
+
+
+# ---- 本地 ASR (faster-whisper) -------------------------------------------
+
+@app.get("/api/asr/status")
+async def asr_status():
+    return asr_service.status()
+
+
+@app.post("/api/asr/transcribe")
+async def asr_transcribe(request: Request):
+    try:
+        body = await request.body()
+    except Exception:
+        return JSONResponse({"error": "invalid request body"}, status_code=400)
+    sample_rate = int(request.headers.get("x-sample-rate", 16000))
+    try:
+        text = await asr_service.transcribe(body, sample_rate)
+    except AsrUnavailable as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+    except Exception as e:
+        return JSONResponse({"error": f"asr failed: {e}"}, status_code=500)
+    return {"text": text}
 
 
 app.websocket("/ws")(ws_endpoint)
