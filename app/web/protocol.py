@@ -14,6 +14,7 @@ class ServerMessageType(str, Enum):
     TOOL_RESULT = "tool_result"
     GENERATION_COMPLETE = "generation_complete"
     ERROR = "error"
+    TTS_AUDIO = "tts_audio"
 
 
 class ClientMessage(BaseModel):
@@ -29,3 +30,6 @@ class ServerMessage(BaseModel):
     result: str | None = None
     final_text: str | None = None
     message: str | None = None
+    audio: str | None = None
+    tts_text: str | None = None
+    chunk_index: int | None = None

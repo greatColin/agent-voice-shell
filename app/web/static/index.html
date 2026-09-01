@@ -1280,6 +1280,14 @@
             recognition: null,
             whisperPipeline: null,
             whisperLoading: false,
+            whisperStream: null,
+            whisperRecorder: null,
+            whisperAudioCtx: null,
+            whisperPCMBuffers: [],
+            whisperSampleRate: 16000,
+            ttsAudioQueue: [],
+            ttsAudioCtx: null,
+            ttsExpectedIndex: 0,
             avatarImage: null,
             avatarList: [],
             avatarName: null,
@@ -1331,6 +1339,110 @@
             recognition.lang = 'zh-CN';
             recognition.maxAlternatives = 1;
             return recognition;
+        }
+
+        // ===== Whisper ASR (local) =====
+        function _ensureWhisperStream() {
+            if (state.whisperStream) return Promise.resolve();
+            return navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+                .then(stream => { state.whisperStream = stream; return stream; });
+        }
+
+        function _pcmChunks(sampleRate) {
+            const buf = [];
+            let offset = 0;
+            const chunkSize = 1024;
+            const factor = sampleRate / state.whisperSampleRate;
+            const outSize = Math.round(chunkSize / factor);
+            const downsample = factor > 1;
+
+            return {
+                push(f32) {
+                    if (downsample) {
+                        for (let i = 0; i < f32.length; i += factor) {
+                            buf.push(f32[Math.floor(i)]);
+                        }
+                    } else {
+                        buf.push(...f32);
+                    }
+                },
+                flush() { return new Float32Array(buf); }
+            };
+        }
+
+        async function startWhisperRecording() {
+            const stream = await _ensureWhisperStream();
+            const ac = new AudioContext({ sampleRate: state.whisperSampleRate });
+            state.whisperAudioCtx = ac;
+            const src = ac.createMediaStreamSource(stream);
+            const analyser = ac.createAnalyser();
+            analyser.fftSize = 2048;
+            src.connect(analyser);
+
+            // Visualize waveform on existing voice-wave canvases
+            _startWaveformsFromAnalyser(analyser);
+
+            const buf = _pcmChunks(ac.sampleRate);
+            const processor = ac.createScriptProcessor(1024, 1, 1);
+            processor.onaudioprocess = (e) => {
+                if (state.asrProvider !== 'whisper') return;
+                buf.push(e.inputBuffer.getChannelData(0));
+            };
+            src.connect(processor);
+            processor.connect(ac.destination);
+            state.whisperPCMBuffers = buf;
+        }
+
+        async function stopWhisperRecording() {
+            if (state.whisperAudioCtx) {
+                try { state.whisperAudioCtx.close(); } catch (e) {}
+                state.whisperAudioCtx = null;
+            }
+            if (state.whisperStream) {
+                state.whisperStream.getTracks().forEach(t => t.stop());
+                state.whisperStream = null;
+            }
+            if (state.whisperRecorder) {
+                try { state.whisperRecorder.stop(); } catch (e) {}
+                state.whisperRecorder = null;
+            }
+        }
+
+        async function transcribeWhisper() {
+            const buf = state.whisperPCMBuffers;
+            if (!buf || buf.length === 0) return '';
+            const f32 = buf.flush();
+            if (f32.length === 0) return '';
+            const int16 = new Int16Array(f32.length);
+            for (let i = 0; i < f32.length; i++) {
+                const s = Math.max(-1, Math.min(1, f32[i]));
+                int16[i] = s < 0 ? s * 32768 : s * 32767;
+            }
+            const pcm = int16.buffer;
+            try {
+                const res = await fetch('/api/asr/transcribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/octet-stream', 'X-Sample-Rate': String(state.whisperSampleRate) },
+                    body: pcm
+                });
+                if (!res.ok) return '';
+                const data = await res.json();
+                return data.text || '';
+            } catch (e) {
+                return '';
+            }
+        }
+
+        // For waveform visualization from an existing analyser (used by whisper)
+        function _startWaveformsFromAnalyser(analyser) {
+            if (!_waveCanvasCtx()) return;
+            if (window._voiceAnalyser) return;
+            window._voiceAnalyser = analyser;
+        }
+
+        function _waveCanvasCtx() {
+            const c = document.getElementById('voice-wave-input') || document.getElementById('voice-wave-0');
+            return c ? c.getContext('2d') : null;
         }
 
         let businessStatus = 'idle';
@@ -1782,6 +1894,22 @@ ${kfs}`;
                                 document.querySelectorAll('[data-provider="browser-asr"], [data-provider="whisper"]').forEach(o => o.classList.remove('selected'));
                                 item.classList.add('selected');
                                 state.asrProvider = provider;
+                                if (provider === 'whisper') {
+                                    const el = document.getElementById('status-whisper');
+                                    if (el) { el.textContent = '加载中'; el.className = 'provider-status'; }
+                                    fetch('/api/asr/status').then(r => r.json()).then(data => {
+                                        if (!data.available) {
+                                            if (el) { el.textContent = '未安装'; el.className = 'provider-status'; }
+                                        } else if (data.ready) {
+                                            if (el) { el.textContent = '在线'; el.className = 'provider-status supported'; }
+                                        } else {
+                                            if (el) { el.textContent = '加载中'; el.className = 'provider-status'; }
+                                        }
+                                    }).catch(() => {
+                                        const el = document.getElementById('status-whisper');
+                                        if (el) { el.textContent = '离线'; el.className = 'provider-status'; }
+                                    });
+                                }
                             }
                             if (provider === 'browser-tts' || provider === 'sherpa-onnx') {
                                 document.querySelectorAll('[data-provider="browser-tts"], [data-provider="sherpa-onnx"]').forEach(o => o.classList.remove('selected'));
@@ -2388,6 +2516,48 @@ ${kfs}`;
             };
         }
 
+        function _ensureTtsAudioCtx() {
+            if (state.ttsAudioCtx) return state.ttsAudioCtx;
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return null;
+            state.ttsAudioCtx = new Ctx({ sampleRate: 24000 });
+            return state.ttsAudioCtx;
+        }
+
+        function _playNextTtsAudio() {
+            while (state.ttsAudioQueue.length > 0 && state.ttsAudioQueue[0].index === state.ttsExpectedIndex) {
+                const item = state.ttsAudioQueue.shift();
+                state.ttsExpectedIndex++;
+                const ac = _ensureTtsAudioCtx();
+                if (!ac) break;
+                ac.decodeAudioData(item.arrayBuffer, (buf) => {
+                    const src = ac.createBufferSource();
+                    src.buffer = buf;
+                    src.connect(ac.destination);
+                    src.onended = () => {
+                        state.isSpeaking = false;
+                        if (!state.isListening) setAgentStatus('idle');
+                        _playNextTtsAudio();
+                    };
+                    src.start();
+                    state.isSpeaking = true;
+                    setAgentStatus('speaking');
+                }, () => {});
+                return;
+            }
+        }
+
+        function _queueTtsAudio(b64, index) {
+            const binary = atob(b64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            state.ttsAudioQueue.push({ arrayBuffer: bytes.buffer, index });
+            state.ttsAudioQueue.sort((a, b) => a.index - b.index);
+            if (!state.isSpeaking) _playNextTtsAudio();
+        }
+
         function setListeningVisual(on) {
             document.querySelectorAll('#voice-btn, .voice-mic-btn').forEach(b => {
                 b.classList.toggle('recording', on);
@@ -2987,8 +3157,67 @@ ${kfs}`;
             widget._stopThinkingObserver = () => clearInterval(stopThinkingObserver);
         }
 
+        async function _startWhisperListening() {
+            // Check if model is ready
+            try {
+                const res = await fetch('/api/asr/status');
+                const data = await res.json();
+                if (!data.ready) {
+                    const statusText = document.getElementById('voice-status-text');
+                    if (statusText) statusText.textContent = 'ASR 模型加载中...';
+                    return;
+                }
+            } catch (e) {
+                const statusText = document.getElementById('voice-status-text');
+                if (statusText) statusText.textContent = 'ASR 连接失败';
+                return;
+            }
+
+            state.isListening = true;
+            state.voiceBase = '';
+            state.voiceFinals = '';
+            const inp = document.getElementById('user-input');
+            if (inp) inp.value = '';
+            const statusText = document.getElementById('voice-status-text');
+            if (statusText) statusText.textContent = '正在聆听...';
+            setListeningVisual(true);
+            setAgentStatus('listening');
+            stopTts();
+
+            try {
+                await startWhisperRecording();
+            } catch (e) {
+                state.isListening = false;
+                setListeningVisual(false);
+                if (statusText) statusText.textContent = '麦克风权限被拒绝';
+            }
+        }
+
+        async function _stopWhisperListening() {
+            await stopWhisperRecording();
+            const statusText = document.getElementById('voice-status-text');
+            if (statusText) statusText.textContent = '正在识别...';
+            const text = await transcribeWhisper();
+            state.voiceBase = text;
+            state.voiceFinals = text;
+            const inp = document.getElementById('user-input');
+            if (inp) inp.value = text;
+            const t = document.getElementById('voice-transcript');
+            if (t) t.textContent = text;
+            if (statusText) statusText.textContent = text ? '识别完成' : '未识别到内容';
+            state.isListening = false;
+            setListeningVisual(false);
+            if (state.isSpeaking) setAgentStatus('speaking');
+            else if (state.assistantActive) setAgentStatus('thinking');
+            else setAgentStatus('idle');
+        }
+
         function startListening() {
             if (state.isListening) return;
+            if (state.asrProvider === 'whisper') {
+                _startWhisperListening();
+                return;
+            }
             if (!state.recognition) state.recognition = initBrowserAsr();
             if (!state.recognition) {
                 const statusText = document.getElementById('voice-status-text');
@@ -3016,6 +3245,7 @@ ${kfs}`;
             if (statusText) statusText.textContent = '正在聆听...';
 
             const recognition = state.recognition;
+            const mobileBubble = document.querySelector('.mobile-voice-bubble');
             recognition.onresult = (e) => {
                 let interim = '';
                 for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -3028,6 +3258,10 @@ ${kfs}`;
                 if (t) t.textContent = shown;
                 const box = document.getElementById('user-input');
                 if (box) box.value = shown;
+                if (mobileBubble) {
+                    mobileBubble.textContent = shown;
+                    mobileBubble.style.display = shown ? 'block' : 'none';
+                }
             };
             recognition.onend = () => {
                 if (!state.isListening) return;
@@ -3053,6 +3287,13 @@ ${kfs}`;
 
         function stopListening(send = false) {
             const wasListening = state.isListening;
+            if (state.asrProvider === 'whisper') {
+                state.isListening = false;
+                setListeningVisual(false);
+                _stopWaveforms();
+                if (wasListening) _stopWhisperListening();
+                return;
+            }
             state.isListening = false;
             setListeningVisual(false);
             const statusText = document.getElementById('voice-status-text');
@@ -3096,6 +3337,7 @@ ${kfs}`;
             state.ws.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
                 if (msg.type === 'assistant_text_delta') appendAssistantText(msg.delta);
+                else if (msg.type === 'tts_audio') _queueTtsAudio(msg.audio, msg.chunk_index);
                 else if (msg.type === 'generation_complete') {
                     // Queue everything not yet spoken as ONE utterance: the browser
                     // synthesizes and plays it continuously (no per-utterance start
