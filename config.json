@@ -1,0 +1,29 @@
+{
+  "trigger": {
+    "impl": "stdin",
+    "params": {
+      "prompt": ">>> "
+    }
+  },
+  "corrector": {
+    "impl": "identity",
+    "params": {}
+  },
+  "agent": {
+    "impl": "pi",
+    "params": {
+      "show_prompt": false
+    }
+  },
+  "output": {
+    "impl": "gui",
+    "params": {
+      "title": "Voice Agent 输出"
+    }
+  },
+  "session": {
+    "params": {
+      "verbose": true
+    }
+  }
+}

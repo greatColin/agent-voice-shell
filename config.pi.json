@@ -1,0 +1,7 @@
+{
+  "trigger":   {"impl": "stdin",    "params": {"prompt": ">>> "}},
+  "corrector": {"impl": "identity", "params": {}},
+  "agent":     {"impl": "pi",       "params": {"show_prompt": true}},
+  "output":    {"impl": "printer",  "params": {"char_delay": 0.05}},
+  "session":   {"params": {"verbose": true}}
+}
