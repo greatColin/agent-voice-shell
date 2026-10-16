@@ -1,3 +1,11 @@
+# Agent Voice Shell（已归档 / ARCHIVED）
+
+> ⚠️ **此分支为旧版实现，已归档不再维护。**
+> 重构后的新架构见 [`main` 分支](../../tree/main)——完全重写的引擎骨架
+> （两线程运行时、打断式状态机、可配置组件装配、pi CLI 真 LLM 流式后端）。
+> 旧版代码仅作历史参考。
+
+---
 # Agent Voice Shell
 
 > Pseudo-full-duplex voice shell with local LLM backend.
